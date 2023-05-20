@@ -15,17 +15,17 @@ from fake_useragent import UserAgent
 
 # Requests 获取HTML页面
 def get_html(url, timeout=60, rand=0):
-    headers = {
-        'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42'}
-    if rand == 1:
+    if rand == 0:
+        headers = {
+            'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42'}
+    else:
         ua = UserAgent(browsers=['edge', 'chrome'])
         headers = ua.random
     try:
         r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
         r.encoding = 'utf-8'
-        print('请求完成')
         return r.text
     except Exception as e:
         print(e)
@@ -65,8 +65,6 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
 
                 # 调取wrap以换行文本
                 summary, abstract = wrap_two(summary), wrap_two(abstract)
-                # 删除标记符号
-                abstract = abstract.replace(' ', ' ')
                 print(
                     f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
                 # 将文本写入文件
@@ -110,7 +108,7 @@ def del_character(infile='', outfile='', change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w+', encoding='utf-8')
     db = in_fo_open.read()
-
+    # 需清除的字符
     out_fo_open.write(db.replace(' ', change_to))
 
     in_fo_open.close()
@@ -122,9 +120,9 @@ def del_character(infile='', outfile='', change_to=' '):
 def baidu_translate(text, flag=0):
     # 检测本地是否有配置文件
     if os.path.isfile(path + file_name):
-        api = json_read(path + file_name)
-        api_id = api['api_id']
-        secret_key = api['secret_key']
+        api_list = json_read(path + file_name)
+        api_id = api_list['api_id']
+        secret_key = api_list['secret_key']
     else:
         print('因安全问题,百度API需自行提供,输入后将保存')
         api_id = str(input('API账户'))
@@ -191,10 +189,8 @@ def get_ip_address():
             if len(ip_address) > 4:
                 ip_address = ip_address[1] + ip_address[2]
                 return ip_address
-                # print(f'你好，来自{address}的用户')
             else:
                 return ip_address[1]
-                # print(f'你好，来自{address[1]}的用户')
         else:
             return None
     except Exception as e:
@@ -236,34 +232,37 @@ path = folder_dir + '\\pyhttpRe\\'
 
 while True:
     # 选择
-    trans = str(input('(n)原文;(y)翻译;(r)重新输入密钥;(q)退出\r\n'))
+    trans = str(input('(n)原文;(y)翻译;(r)重新输入密钥;(c)查询当前密钥;(q)退出\r\n'))
 
     # 是否重写配置文件
     if trans == 'r':
-        apiId = str(input('API账户'))
-        secretKey = str(input('API密钥'))
+        apiId = str(input('API账户: '))
+        secretKey = str(input('API密钥: '))
         json_write(path, apiId, secretKey)
+    elif trans == 'c':
+        api = json_read(path + 'api.json')
+        print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
     # 退出
     elif trans == 'q':
         exit('Exit')
     elif trans in ['n', 'y']:
         break
     else:
-        print('无此选项\r\n')
+        print('无此选项')
 
 # 打开文档流
 inFoFile = codecs.open("./temp-Nature.txt", 'w+', 'utf-8')
 inFoFile.write("")
 
 url_mat = 'https://www.nature.com/nmat/'
-#
-requestHeadersType = input('是否使用随机请求头(在多次请求失败时尝试)\n y/n\r\n')
+
+requestHeadersType = input('是否使用随机请求头\n y/n\n')
 if requestHeadersType == 'y':
     requestHeadersType = 1
 else:
     requestHeadersType = 0
 
-print('开始爬取\n' + '-' * 20 + '\r\n')
+print('开始爬取\n' + '-' * 25)
 htmlNature = get_html(url_mat, requestHeadersType)
 soupMain = BeautifulSoup(htmlNature, "lxml")
 # 等待文档分析完成
