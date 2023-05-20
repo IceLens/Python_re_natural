@@ -25,6 +25,7 @@ def get_html(url, timeout=60, rand=0):
         r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
         r.encoding = 'utf-8'
+        print('请求完成')
         return r.text
     except Exception as e:
         print(e)
@@ -34,7 +35,6 @@ def get_html(url, timeout=60, rand=0):
 # BeautifulSoup 处理HTML以提取信息
 def featured(soup, if_trans='n', url='https://www.nature.com'):
     i = 0
-    inFoFile.write("")
     # 获取每个文本盒子
     for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
         try:
@@ -66,7 +66,7 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                 # 调取wrap以换行文本
                 summary, abstract = wrap_two(summary), wrap_two(abstract)
                 # 删除标记符号
-                abstract = abstract.replace('&thinsp;', ' ')
+                abstract = abstract.replace(' ', ' ')
                 print(
                     f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
                 # 将文本写入文件
@@ -105,6 +105,19 @@ def wrap_two(text):
     return text
 
 
+def del_character(infile='', outfile='', change_to=' '):
+
+    in_fo_open = open(infile, 'r', encoding='utf-8')
+    out_fo_open = open(outfile, 'w+', encoding='utf-8')
+    db = in_fo_open.read()
+
+    out_fo_open.write(db.replace(' ', change_to))
+
+    in_fo_open.close()
+    out_fo_open.close()
+    os.remove(infile)
+
+
 # BaiduAPI 翻译
 def baidu_translate(text, flag=0):
     # 检测本地是否有配置文件
@@ -135,7 +148,7 @@ def baidu_translate(text, flag=0):
         sign = api_id + text + str(salt) + secret_key
         sign = hashlib.md5(sign.encode()).hexdigest()
         my_url = my_url + '?appid=' + api_id + '&q=' + urllib.parse.quote(text) + '&from=' + from_lang + \
-                 '&to=' + to_lang + '&salt=' + str(salt) + '&sign=' + sign
+            '&to=' + to_lang + '&salt=' + str(salt) + '&sign=' + sign
 
         # 请求
         http_client = http.client.HTTPConnection('api.fanyi.baidu.com')
@@ -170,17 +183,17 @@ def get_ip_address():
         html = get_html(url)
         soup = BeautifulSoup(html, 'lxml')
 
-        address = soup.find('p').get_text()
-        address = address.replace('来自：', '')
-        address = address.split()
-        if address is not None:
-            address = jieba.lcut(address[2])
-            if len(address) > 4:
-                address = address[1] + address[2]
-                return  address
+        ip_address = soup.find('p').get_text()
+        ip_address = ip_address.replace('来自：', '')
+        ip_address = ip_address.split()
+        if ip_address is not None:
+            ip_address = jieba.lcut(ip_address[2])
+            if len(ip_address) > 4:
+                ip_address = ip_address[1] + ip_address[2]
+                return ip_address
                 # print(f'你好，来自{address}的用户')
             else:
-                return address[1]
+                return ip_address[1]
                 # print(f'你好，来自{address[1]}的用户')
         else:
             return None
@@ -216,30 +229,49 @@ address = get_ip_address()
 if address is not None:
     print(f'你好，来自{address}的用户')
 
-# 选择
-trans = str(input('(n)原文;(y)翻译;(r)重新输入密钥;(q)退出\r\n'))
 # 配置文件地址
 folder_dir = os.environ['APPDATA']
 file_name = 'api.json'
 path = folder_dir + '\\pyhttpRe\\'
-# 是否重写配置文件
-if trans == 'r':
-    apiId = str(input('API账户'))
-    secretKey = str(input('API密钥'))
-    json_write(path, apiId, secretKey)
-elif trans == 'q':
-    exit()
+
+while True:
+    # 选择
+    trans = str(input('(n)原文;(y)翻译;(r)重新输入密钥;(q)退出\r\n'))
+
+    # 是否重写配置文件
+    if trans == 'r':
+        apiId = str(input('API账户'))
+        secretKey = str(input('API密钥'))
+        json_write(path, apiId, secretKey)
+    # 退出
+    elif trans == 'q':
+        exit('Exit')
+    elif trans in ['n', 'y']:
+        break
+    else:
+        print('无此选项\r\n')
 
 # 打开文档流
-inFoFile = codecs.open("./Nature Materials.txt", 'w+', 'utf-8')
+inFoFile = codecs.open("./temp-Nature.txt", 'w+', 'utf-8')
+inFoFile.write("")
 
 url_mat = 'https://www.nature.com/nmat/'
-print('开始爬取\n' + '-' * 20 + '\r\n')
+#
+requestHeadersType = input('是否使用随机请求头(在多次请求失败时尝试)\n y/n\r\n')
+if requestHeadersType == 'y':
+    requestHeadersType = 1
+else:
+    requestHeadersType = 0
 
-htmlNature = get_html(url_mat)
+print('开始爬取\n' + '-' * 20 + '\r\n')
+htmlNature = get_html(url_mat, requestHeadersType)
 soupMain = BeautifulSoup(htmlNature, "lxml")
+# 等待文档分析完成
 featured(soupMain, trans)
 
 print('爬取完成,结果保存于Nature Materials.txt')
-sleep(10)
 inFoFile.close()
+# 清楚乱码
+del_character('./temp-Nature.txt', './Nature Materials.txt')
+
+sleep(5)
