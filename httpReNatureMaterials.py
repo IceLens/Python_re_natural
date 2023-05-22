@@ -74,7 +74,9 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                     '[简介]  \n' + summary + '\r\n' +
                     '[摘要]  \n' + abstract + '\r\n' +
                     '[文章链接]\n' + url + link + '\r\n' +
-                    '[发布时间]\n' + time + '.\r\n\n')
+                    '[发布时间]\n' + time + '.\r\n' +
+                    '——' * 40 + '\r\n\n'
+                )
             else:
                 continue
 
@@ -211,66 +213,84 @@ def json_write(fdir, api_id, secret_key):
 def json_read(file_path):
     # 文件是否可读
     if not os.access(file_path, os.R_OK):
-        print('文件不可读')
-        return False
+        # print('文件不可读')
+        return None
     # 读取json
     with open(f'{file_path}', 'r') as f:
         ini = json.load(f)
     return ini
 
 
-# 程序开始
-# 欢迎语句
-address = get_ip_address()
-if address is not None:
-    print(f'你好，来自{address}的用户')
+def main():
+    url_mat = 'https://www.nature.com/nmat/'
 
-# 配置文件地址
-folder_dir = os.environ['APPDATA']
-file_name = 'api.json'
-path = folder_dir + '\\pyhttpRe\\'
-
-while True:
-    # 选择
-    trans = str(input('(n)原文;(y)翻译;(r)重新输入密钥;(c)查询当前密钥;(q)退出\r\n'))
-
-    # 是否重写配置文件
-    if trans == 'r':
-        apiId = str(input('API账户: '))
-        secretKey = str(input('API密钥: '))
-        json_write(path, apiId, secretKey)
-    elif trans == 'c':
-        api = json_read(path + 'api.json')
-        print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
-    # 退出
-    elif trans == 'q':
-        exit('Exit')
-    elif trans in ['n', 'y']:
-        break
+    request_headers_type = input('是否使用随机请求头\n y/n\n')
+    if request_headers_type == 'y':
+        request_headers_type = 1
     else:
-        print('无此选项')
+        request_headers_type = 0
 
-# 打开文档流
-inFoFile = codecs.open("./temp-Nature.txt", 'w+', 'utf-8')
-inFoFile.write("")
+    print('开始爬取\n' + '-' * 25)
+    html_nature = get_html(url_mat, request_headers_type)
+    soup_main = BeautifulSoup(html_nature, "lxml")
+    # 等待文档分析完成
+    featured(soup_main, trans)
 
-url_mat = 'https://www.nature.com/nmat/'
+    print('爬取完成,结果保存于Nature Materials.txt')
 
-requestHeadersType = input('是否使用随机请求头\n y/n\n')
-if requestHeadersType == 'y':
-    requestHeadersType = 1
-else:
-    requestHeadersType = 0
+    # 清楚乱码
+    del_character('./temp-Nature.txt', './Nature Materials.txt')
 
-print('开始爬取\n' + '-' * 25)
-htmlNature = get_html(url_mat, requestHeadersType)
-soupMain = BeautifulSoup(htmlNature, "lxml")
-# 等待文档分析完成
-featured(soupMain, trans)
 
-print('爬取完成,结果保存于Nature Materials.txt')
-inFoFile.close()
-# 清楚乱码
-del_character('./temp-Nature.txt', './Nature Materials.txt')
+# 程序开始
+if __name__ == '__main__':
 
-sleep(5)
+    # 欢迎语句
+    address = get_ip_address()
+    if address is not None:
+        print(f'你好，来自{address}的用户')
+
+    # 配置文件地址
+    folder_dir = os.environ['APPDATA']
+    file_name = 'api.json'
+    path = folder_dir + '\\pyhttpRe\\'
+
+    while True:
+        # 选择
+        trans = str(input('\n(n)原文;(y)翻译;(r)重新输入密钥;(c)查询当前密钥;(k)清除密钥;(q)退出\r\n'))
+
+        # 是否重写配置文件
+        if trans == 'r':
+            apiId = str(input('API账户: '))
+            secretKey = str(input('API密钥: '))
+            json_write(path, apiId, secretKey)
+        elif trans == 'c':
+            api = json_read(path + 'api.json')
+            if api is not None:
+                print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
+            else:
+                print('无密钥文件')
+        # 退出
+        elif trans == 'q':
+            exit('Exit')
+        elif trans == 'k':
+            a = input('确认清楚?  y/n\n')
+            if a == 'y':
+                try:
+                    os.remove(path + 'api.json')
+                except FileNotFoundError:
+                    print('无配置文件')
+        elif trans in ['n', 'y']:
+            break
+        else:
+            print('无此选项')
+
+    # 打开文档流
+    inFoFile = codecs.open("./temp-Nature.txt", 'w+', 'utf-8')
+    inFoFile.write("")
+    # 主函数
+    main()
+    # 关闭文档流
+    inFoFile.close()
+
+    sleep(5)
