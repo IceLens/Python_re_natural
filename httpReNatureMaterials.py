@@ -12,6 +12,12 @@ import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
+'''
+    本程序为了方便,将所有函数整合于单一文件
+    
+    But 程序不应该有这么多缩进......
+'''
+
 
 # Requests 获取HTML页面
 def get_html(url, timeout=60, rand=0):
@@ -22,6 +28,7 @@ def get_html(url, timeout=60, rand=0):
     else:
         ua = UserAgent(browsers=['edge', 'chrome'])
         headers = ua.random
+
     try:
         r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
@@ -76,7 +83,7 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                     '[文章链接]\n' + url + link + '\r\n' +
                     '[发布时间]\n' + time + '.\r\n' +
                     '——' * 40 + '\r\n\n'
-                )
+                    )
             else:
                 continue
 
@@ -106,7 +113,6 @@ def wrap_two(text):
 
 
 def del_character(infile='', outfile='', change_to=' '):
-
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w+', encoding='utf-8')
     db = in_fo_open.read()
@@ -122,14 +128,14 @@ def del_character(infile='', outfile='', change_to=' '):
 def baidu_translate(text, flag=0):
     # 检测本地是否有配置文件
     if os.path.isfile(path + file_name):
-        api_list = json_read(path + file_name)
+        api_list = json_api_read(path + file_name)
         api_id = api_list['api_id']
         secret_key = api_list['secret_key']
     else:
         print('因安全问题,百度API需自行提供,输入后将保存')
         api_id = str(input('API账户'))
         secret_key = str(input('API密钥'))
-        json_write(path, api_id, secret_key)
+        json_api_write(path, api_id, secret_key)
 
     http_client = None
     my_url = '/api/trans/vip/translate'
@@ -186,8 +192,10 @@ def get_ip_address():
         ip_address = soup.find('p').get_text()
         ip_address = ip_address.replace('来自：', '')
         ip_address = ip_address.split()
+
         if ip_address is not None:
             ip_address = jieba.lcut(ip_address[2])
+            # 为解决 jieba 分解字符问题(这貌似不是一个合理的办法,但似乎可以正常使用)
             if len(ip_address) > 4:
                 ip_address = ip_address[1] + ip_address[2]
                 return ip_address
@@ -195,12 +203,13 @@ def get_ip_address():
                 return ip_address[1]
         else:
             return None
+
     except Exception as e:
         print(e)
 
 
 # 写入配置文件
-def json_write(fdir, api_id, secret_key):
+def json_api_write(fdir, api_id, secret_key):
     if not os.path.exists(fdir):
         os.mkdir(fdir)
     # 使用json库
@@ -210,10 +219,9 @@ def json_write(fdir, api_id, secret_key):
 
 
 # 读取配置文件
-def json_read(file_path):
+def json_api_read(file_path):
     # 文件是否可读
     if not os.access(file_path, os.R_OK):
-        # print('文件不可读')
         return None
     # 读取json
     with open(f'{file_path}', 'r') as f:
@@ -221,6 +229,7 @@ def json_read(file_path):
     return ini
 
 
+# Main function
 def main():
     url_mat = 'https://www.nature.com/nmat/'
 
@@ -238,7 +247,7 @@ def main():
 
     print('爬取完成,结果保存于Nature Materials.txt')
 
-    # 清楚乱码
+    # 清除 乱码
     del_character('./temp-Nature.txt', './Nature Materials.txt')
 
 
@@ -263,9 +272,9 @@ if __name__ == '__main__':
         if trans == 'r':
             apiId = str(input('API账户: '))
             secretKey = str(input('API密钥: '))
-            json_write(path, apiId, secretKey)
+            json_api_write(path, apiId, secretKey)
         elif trans == 'c':
-            api = json_read(path + 'api.json')
+            api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
