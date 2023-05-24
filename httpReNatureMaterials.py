@@ -24,7 +24,7 @@ def get_html(url, timeout=60, rand=0):
     if rand == 0:
         headers = {
             'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42'}
+                          'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'}
     else:
         ua = UserAgent(browsers=['edge', 'chrome'])
         headers = ua.random
@@ -39,65 +39,13 @@ def get_html(url, timeout=60, rand=0):
         pass
 
 
-# BeautifulSoup 处理HTML以提取信息
-def featured(soup, if_trans='n', url='https://www.nature.com'):
-    i = 0
-    # 获取每个文本盒子
-    for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
-        try:
-            # 文本处理
-            # 标题
-            title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
-            title = title_link.get_text()
-            # 简介
-            summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"})
-            summary = summary.select('p')[0].get_text()
-            # 文章链接'a'标签
-            link = title_link.get('href')
-            # 文章发布时间
-            time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
-            time = time[0].get_text()
-
-            # 输出处理后文本
-            if title and summary is not None:
-                # 序号
-                i += 1
-                # 获取摘要
-                abstract = get_abstract(url, link)
-                # 翻译模式
-                if if_trans == 'y':
-                    title = baidu_translate(title)
-                    summary = baidu_translate(summary)
-                    abstract = baidu_translate(abstract)
-
-                # 调取wrap以换行文本
-                summary, abstract = wrap_two(summary), wrap_two(abstract)
-                print(
-                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
-                # 将文本写入文件
-                inFoFile.write(
-                    str(i) + '.\r\n' +
-                    '[标题]\n' + title + '.\r\n' +
-                    '[简介]  \n' + summary + '\r\n' +
-                    '[摘要]  \n' + abstract + '\r\n' +
-                    '[文章链接]\n' + url + link + '\r\n' +
-                    '[发布时间]\n' + time + '.\r\n' +
-                    '——' * 40 + '\r\n\n'
-                    )
-            else:
-                continue
-
-        except Exception as e:
-            print(e)
-            pass
-
-
 # 获取文章摘要
 def get_abstract(url, href):
     html = get_html(url + href)
     soup = BeautifulSoup(html, "lxml")
 
-    text = soup.find(attrs={"id": "Abs1-content"}).get_text()
+    text = soup.find(attrs={"id": "Abs1-content"}).select('p')[0]
+    text = str(text)
     if text is not None:
         return text
     else:
@@ -112,16 +60,84 @@ def wrap_two(text):
     return text
 
 
-def del_character(infile='', outfile='', change_to=' '):
+# 文档字符剔除
+def del_character_doc(infile='', outfile='', change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w+', encoding='utf-8')
     db = in_fo_open.read()
     # 需清除的字符
-    out_fo_open.write(db.replace(' ', change_to))
+    char_list = [' ']
+    for char in char_list:
+        out_fo_open.write(db.replace(char, change_to))
 
     in_fo_open.close()
     out_fo_open.close()
     os.remove(infile)
+
+
+# 字符剔除
+def del_char_line(text):
+    if text is not str:
+        text = str(text)
+    list_char = ('<p>', '</p>')
+    for char in list_char:
+        text = text.replace(char, '')
+    return text
+
+
+# BeautifulSoup 处理HTML以提取信息
+def featured(soup, if_trans='n', url='https://www.nature.com'):
+    i = 0
+    # 获取每个文本盒子
+    for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
+        try:
+            # 文本处理
+            # 标题
+            title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
+            title = str(title_link).split('">')
+            title = title[1].replace('</a>', '')
+            # 简介
+            summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"})
+            summary = summary.select('p')[0]
+            # 文章链接'a'标签
+            link = title_link.get('href')
+            # 文章发布时间
+            time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
+            time = time[0].get_text()
+
+            # 输出处理后文本
+            if title and summary is not None:
+                # 序号
+                i += 1
+                # 获取摘要
+                abstract = get_abstract(url, link)
+                summary, abstract = del_char_line(summary), del_char_line(abstract)
+                # 翻译模式
+                if if_trans == 'y':
+                    title = baidu_translate(title)
+                    summary = baidu_translate(summary.get_text())
+                    abstract = baidu_translate(abstract)
+
+                # 调取wrap以换行文本
+                summary, abstract = wrap_two(str(summary)), wrap_two(str(abstract))
+                print(
+                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
+                # 将文本写入文件
+                inFoFile.write(
+                    str(i) + '\r\n' +
+                    '## ' + title + '.\r\n' +
+                    '<b>' + summary + '</b>' + '\r\n\n' +
+                    '[摘要]  \n' + abstract + '\r\n' +
+                    '[文章链接]\n' + url + link + '\r\n\n' +
+                    '[发布时间]  \n' + time + '\r\n\n' +
+                    '***\r\n\n'
+                )
+            else:
+                continue
+
+        except Exception as e:
+            print(e)
+            pass
 
 
 # BaiduAPI 翻译
@@ -239,21 +255,17 @@ def main():
     else:
         request_headers_type = 0
 
-    print('开始爬取\n' + '-' * 25)
+    print('开始爬取\n' + '——' * 25)
     html_nature = get_html(url_mat, request_headers_type)
     soup_main = BeautifulSoup(html_nature, "lxml")
     # 等待文档分析完成
     featured(soup_main, trans)
 
-    print('爬取完成,结果保存于Nature Materials.txt')
-
-    # 清除 乱码
-    del_character('./temp-Nature.txt', './Nature Materials.txt')
+    print('爬取完成,结果保存于Nature Materials.md')
 
 
 # 程序开始
 if __name__ == '__main__':
-
     # 欢迎语句
     address = get_ip_address()
     if address is not None:
@@ -295,11 +307,13 @@ if __name__ == '__main__':
             print('无此选项')
 
     # 打开文档流
-    inFoFile = codecs.open("./temp-Nature.txt", 'w+', 'utf-8')
+    inFoFile = codecs.open("./temp-Nature.md", 'w+', 'utf-8')
     inFoFile.write("")
     # 主函数
     main()
     # 关闭文档流
     inFoFile.close()
+    # 清除字符
+    del_character_doc('./temp-Nature.md', './Nature Materials.md')
 
     sleep(5)
