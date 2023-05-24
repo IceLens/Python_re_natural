@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 import random
+import re
 import urllib.parse
 from time import sleep
 
@@ -75,16 +76,6 @@ def del_character_doc(infile='', outfile='', change_to=' '):
     os.remove(infile)
 
 
-# 字符剔除
-def del_char_line(text):
-    if text is not str:
-        text = str(text)
-    list_char = ('<p>', '</p>')
-    for char in list_char:
-        text = text.replace(char, '')
-    return text
-
-
 # BeautifulSoup 处理HTML以提取信息
 def featured(soup, if_trans='n', url='https://www.nature.com'):
     i = 0
@@ -94,11 +85,10 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
             # 文本处理
             # 标题
             title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
-            title = str(title_link).split('">')
-            title = title[1].replace('</a>', '')
+            title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
             # 简介
-            summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"})
-            summary = summary.select('p')[0]
+            summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
+            summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
             # 文章链接'a'标签
             link = title_link.get('href')
             # 文章发布时间
@@ -111,11 +101,11 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                 i += 1
                 # 获取摘要
                 abstract = get_abstract(url, link)
-                summary, abstract = del_char_line(summary), del_char_line(abstract)
+                abstract = re.sub('(</?a.*?>)|(</?p>)', '', abstract)
                 # 翻译模式
                 if if_trans == 'y':
                     title = baidu_translate(title)
-                    summary = baidu_translate(summary.get_text())
+                    summary = baidu_translate(summary)
                     abstract = baidu_translate(abstract)
 
                 # 调取wrap以换行文本
