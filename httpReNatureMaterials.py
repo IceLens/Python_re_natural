@@ -109,8 +109,8 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                     summary = baidu_translate(summary)
                     abstract = baidu_translate(abstract)
 
-                # 调取wrap以换行文本     # char_list = ['＜sub＞', '＜/su＞']
-                summary, abstract = wrap_two(str(summary)), wrap_two(str(abstract))
+                # 调取wrap以换行文本
+                summary, abstract = wrap_two(summary), wrap_two(abstract)
                 del_char_list = ('＜sub＞', '＜/su＞')
                 change_char_list = ('<sub>', '</sub>')
 
@@ -121,15 +121,14 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                 print(
                     f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
                 # 将文本写入文件
-                inFoFile.write(
-                    str(i) + '\r\n' +
-                    '## ' + title + '.\r\n' +
-                    '<b>' + summary + '</b>' + '\r\n\n' +
-                    '[摘要]  \n' + abstract + '\r\n' +
-                    '[文章链接]\n' + url + link + '\r\n\n' +
-                    '[发布时间]  \n' + time + '\r\n\n' +
-                    '***\r\n\n'
-                )
+                inFoFile.write(f'{str(i)}\n'
+                               f' ## {title}.\n'
+                               f' <b>{summary}</b>\n\n'
+                               f' [摘要]  \n{abstract}\n'
+                               f' [文章链接]\n{url+link}\n\n'
+                               f' [发布时间]  \n{time}\n\n'
+                               f' ***\n\n'
+                               )
             else:
                 continue
 
@@ -137,6 +136,15 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
             print(e)
             pass
 
+
+'''                 str(i) + '\r\n' +
+                    '## ' + title + '.\r\n' +
+                    '<b>' + summary + '</b>' + '\r\n\n' +
+                    '[摘要]  \n' + abstract + '\r\n' +
+                    '[文章链接]\n' + url + link + '\r\n\n' +
+                    '[发布时间]  \n' + time + '\r\n\n' +
+                    '***\r\n\n'
+'''
 
 # BaiduAPI 翻译
 def baidu_translate(text, flag=0):
@@ -247,16 +255,18 @@ def json_api_read(file_path):
 def main():
     url_mat = 'https://www.nature.com/nmat/'
 
-    request_headers_type = input('是否使用随机请求头\n y/n\n')
-    if request_headers_type == 'y':
-        request_headers_type = 1
-    else:
+    request_headers_type = input('是否使用随机请求头\n y/n :  ')
+    if request_headers_type == 'n':
         request_headers_type = 0
+    else:
+        print('已选择随机请求头')
+        request_headers_type = 1
 
-    print('开始爬取\n' + '——' * 25)
+    print('开始爬取\n' + '——' * 30)
     html_nature = get_html(url_mat, request_headers_type)
+
+    print('请求完成,正在解析文档')
     soup_main = BeautifulSoup(html_nature, "lxml")
-    # 等待文档分析完成
     featured(soup_main, trans)
 
     print('爬取完成,结果保存于Nature Materials.md')
@@ -283,15 +293,18 @@ if __name__ == '__main__':
             apiId = str(input('API账户: '))
             secretKey = str(input('API密钥: '))
             json_api_write(path, apiId, secretKey)
+
         elif trans == 'c':
             api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
                 print('无密钥文件')
+
         # 退出
         elif trans == 'q':
             exit('Exit')
+
         elif trans == 'k':
             a = input('确认清楚?  y/n\n')
             if a == 'y':
@@ -299,6 +312,7 @@ if __name__ == '__main__':
                     os.remove(path + 'api.json')
                 except FileNotFoundError:
                     print('无配置文件')
+
         elif trans in ['n', 'y']:
             break
         else:
