@@ -125,7 +125,7 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                                f' ## {title}.\n'
                                f' <b>{summary}</b>\n\n'
                                f' [摘要]  \n{abstract}\n'
-                               f' [文章链接]\n{url+link}\n\n'
+                               f' [文章链接]\n{url + link}\n\n'
                                f' [发布时间]  \n{time}\n\n'
                                f' ***\n\n'
                                )
@@ -136,15 +136,6 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
             print(e)
             pass
 
-
-'''                 str(i) + '\r\n' +
-                    '## ' + title + '.\r\n' +
-                    '<b>' + summary + '</b>' + '\r\n\n' +
-                    '[摘要]  \n' + abstract + '\r\n' +
-                    '[文章链接]\n' + url + link + '\r\n\n' +
-                    '[发布时间]  \n' + time + '\r\n\n' +
-                    '***\r\n\n'
-'''
 
 # BaiduAPI 翻译
 def baidu_translate(text, flag=0):
