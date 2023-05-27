@@ -1,12 +1,10 @@
 import codecs
 import hashlib
-import http.client
 import json
 import os
 import random
 import re
-import urllib.parse
-from time import sleep
+import time
 
 import jieba
 import requests
@@ -64,7 +62,7 @@ def wrap_two(text):
 # 文档字符剔除
 def del_character_doc(infile='', outfile='', change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
-    out_fo_open = open(outfile, 'w+', encoding='utf-8')
+    out_fo_open = open(outfile, 'w', encoding='utf-8')
     db = in_fo_open.read()
     # 需清除的字符
     char_list = [' ']
@@ -73,11 +71,39 @@ def del_character_doc(infile='', outfile='', change_to=' '):
 
     in_fo_open.close()
     out_fo_open.close()
-    os.remove(infile)
+    # os.remove(infile)
+
+
+def web_change(tag):
+    tag = tag.find(attrs={"class": "c-card__link u-link-inherit"}).get_text()
+    tag_hash = hashlib.md5(tag.encode()).hexdigest()
+
+    if not os.access('save files/hash.json', os.R_OK):
+        with open('save files/hash.json', 'w') as f:
+            hash_dic = {"hash": "None"}
+            json.dump(hash_dic, f, indent=4, ensure_ascii=False)
+
+    try:
+        with open('save files/hash.json', 'r') as f:
+            cache_hash = json.load(f)
+            # 如相等则返回False
+            if cache_hash['hash'] == tag_hash:
+                return False
+            else:
+                cache_hash['hash'] = tag_hash
+        # 如不等则返回True
+        with open('save files/hash.json', 'w') as r:
+            json.dump(cache_hash, r)
+            return True
+
+    except Exception as e:
+        print(e)
+        os.unlink('save files/hash.json')
+        return True
 
 
 # BeautifulSoup 处理HTML以提取信息
-def featured(soup, if_trans='n', url='https://www.nature.com'):
+def text_analysis(soup, if_trans='n', url='https://www.nature.com'):
     i = 0
     # 获取每个文本盒子
     for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
@@ -92,8 +118,8 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
             # 文章链接'a'标签
             link = title_link.get('href')
             # 文章发布时间
-            time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
-            time = time[0].get_text()
+            pub_time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
+            pub_time = pub_time[0].get_text()
 
             # 输出处理后文本
             if title and summary is not None:
@@ -108,6 +134,7 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                     title = baidu_translate(title)
                     summary = baidu_translate(summary)
                     abstract = baidu_translate(abstract)
+                    print('翻译完成')
 
                 # 调取wrap以换行文本
                 summary, abstract = wrap_two(summary), wrap_two(abstract)
@@ -119,16 +146,18 @@ def featured(soup, if_trans='n', url='https://www.nature.com'):
                     abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
 
                 print(
-                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{time}\n")
+                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{pub_time}\n")
                 # 将文本写入文件
                 inFoFile.write(f'{str(i)}\n'
                                f' ## {title}.\n'
                                f' <b>{summary}</b>\n\n'
-                               f' [摘要]  \n{abstract}\n'
+                               f' [摘要]  \n{abstract}\n\n'
                                f' [文章链接]\n{url + link}\n\n'
-                               f' [发布时间]  \n{time}\n\n'
+                               f' [发布时间]  \n{pub_time}\n\n'
                                f' ***\n\n'
                                )
+                if i % 3 == 0:
+                    inFoFile.flush()
             else:
                 continue
 
@@ -150,8 +179,7 @@ def baidu_translate(text, flag=0):
         secret_key = str(input('API密钥'))
         json_api_write(path, api_id, secret_key)
 
-    http_client = None
-    my_url = '/api/trans/vip/translate'
+    baidu_api_url = 'https://api.fanyi.baidu.com/api/trans/vip/translate'
     from_lang = 'auto'
 
     # 翻译模式
@@ -160,32 +188,28 @@ def baidu_translate(text, flag=0):
     else:
         to_lang = 'zh'
 
-    salt = random.randint(3276, 65536)
-
+    # 百度翻译api 要求格式
     try:
-        # 编码字符
+        salt = random.randint(3276, 65536)
         sign = api_id + text + str(salt) + secret_key
         sign = hashlib.md5(sign.encode()).hexdigest()
-        my_url = my_url + '?appid=' + api_id + '&q=' + urllib.parse.quote(text) + '&from=' + from_lang + \
-            '&to=' + to_lang + '&salt=' + str(salt) + '&sign=' + sign
+        data = {
+            'q': text,
+            'from': from_lang,
+            'to': to_lang,
+            'appid': api_id,
+            'salt': str(salt),
+            'sign': sign
+        }
 
-        # 请求
-        http_client = http.client.HTTPConnection('api.fanyi.baidu.com')
-        http_client.request('GET', my_url)
-        response = http_client.getresponse()
-        # 编码获取的结果
-        result_all = response.read().decode("utf-8")
-        result = json.loads(result_all)
+        res = requests.post(baidu_api_url, data=data)
+        result = res.json()
         result = result['trans_result'][0]['dst']
-        # 避免请求过快
-        sleep(1)
-        return result
 
+        time.sleep(1)
+        return result
     except Exception as e:
         print(e)
-    finally:
-        if http_client:
-            http_client.close()
 
 
 # TODO 尝试爬取翻译界面 百度翻译加密导致无法爬取
@@ -226,7 +250,7 @@ def json_api_write(fdir, api_id, secret_key):
     if not os.path.exists(fdir):
         os.mkdir(fdir)
     # 使用json库
-    with open(fr'{fdir}\api.json', 'w+') as f:
+    with open(fr'{fdir}\api.json', 'w') as f:
         api_dict = {"api_id": api_id, "secret_key": secret_key}
         json.dump(api_dict, f, indent=4, ensure_ascii=False)
 
@@ -258,9 +282,8 @@ def main():
 
     print('请求完成,正在解析文档')
     soup_main = BeautifulSoup(html_nature, "lxml")
-    featured(soup_main, trans)
-
-    print('爬取完成,结果保存于Nature Materials.md')
+    if web_change(soup_main):
+        text_analysis(soup_main, trans)
 
 
 # 程序开始
@@ -277,7 +300,7 @@ if __name__ == '__main__':
 
     while True:
         # 选择
-        trans = str(input('\n(n)原文;(y)翻译;(r)重新输入密钥;(c)查询当前密钥;(k)清除密钥;(q)退出\r\n'))
+        trans = input('\n(n)原文;(y)翻译;(f)强制刷新;(r)重新输入密钥;(c)查询当前密钥;(k)清除密钥;(q)退出\r\n')
 
         # 是否重写配置文件
         if trans == 'r':
@@ -303,20 +326,27 @@ if __name__ == '__main__':
                     os.remove(path + 'api.json')
                 except FileNotFoundError:
                     print('无配置文件')
-
+        elif trans == 'f':
+            os.unlink('save files/hash.json')
         elif trans in ['n', 'y']:
             break
         else:
             print('无此选项')
 
+    if not os.path.exists('./save files'):
+        os.mkdir('./save files')
     # 打开文档流
-    inFoFile = codecs.open("./temp-Nature.md", 'w+', 'utf-8')
+    inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
     inFoFile.write("")
     # 主函数
     main()
     # 关闭文档流
     inFoFile.close()
+    date = time.strftime('%y-%m-%d')
     # 清除字符
-    del_character_doc('./temp-Nature.md', './Nature Materials.md')
+    if os.path.getsize('./save files/temp-Nature.txt'):
+        del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
+    print(f'爬取完成,结果保存于{date}-Nature Materials.md')
+    os.remove('./save files/temp-Nature.txt')
 
-    sleep(5)
+    time.sleep(5)
