@@ -1,16 +1,18 @@
 import codecs
 import hashlib
 import json
-import os
-import random
 import re
 import time
-
+import multiprocessing
 import jieba
 import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
+from include.tt_draw import *
+
+# import random
+# import os
 '''
     本程序为了方便,将所有函数整合于单一文件
     
@@ -103,7 +105,7 @@ def web_change(tag):
 
 
 # BeautifulSoup 处理HTML以提取信息
-def text_analysis(soup, if_trans='n', url='https://www.nature.com'):
+def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
     i = 0
     # 获取每个文本盒子
     for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
@@ -130,7 +132,7 @@ def text_analysis(soup, if_trans='n', url='https://www.nature.com'):
                 abstract = re.sub('(</?a.*?>)|(</?p>)', '', abstract)
 
                 # 翻译模式
-                if if_trans == 'y':
+                if if_trans == '1':
                     title = baidu_translate(title)
                     summary = baidu_translate(summary)
                     abstract = baidu_translate(abstract)
@@ -266,6 +268,17 @@ def json_api_read(file_path):
     return ini
 
 
+def tt_draw(tt_type=0):
+    if tt_type == 0:
+        tt_draw_random()
+    elif tt_type == 1:
+        tt_draw_polyhedral()
+    elif tt_type == 2:
+        tt_draw_picture('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 5, 0.5, 0.5)
+    else:
+        print('你干嘛,哎哟')
+
+
 # Main function
 def main():
     url_mat = 'https://www.nature.com/nmat/'
@@ -300,41 +313,45 @@ if __name__ == '__main__':
 
     while True:
         # 选择
-        trans = input('\n(n)原文;(y)翻译;(f)强制刷新;(r)重新输入密钥;(c)查询当前密钥;(k)清除密钥;(q)退出\r\n')
+        trans = input('\n(0)原文;(1)翻译;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
 
-        # 是否重写配置文件
-        if trans == 'r':
+        if trans in ['0', '1']:
+            break
+        elif trans == '2':
+            os.unlink('save files/hash.json')
+        elif trans == '3':
             apiId = str(input('API账户: '))
             secretKey = str(input('API密钥: '))
             json_api_write(path, apiId, secretKey)
-
-        elif trans == 'c':
+        elif trans == '4':
             api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
                 print('无密钥文件')
-
-        # 退出
-        elif trans == 'q':
-            exit('Exit')
-
-        elif trans == 'k':
-            a = input('确认清楚?  y/n\n')
+        elif trans == '5':
+            a = input('确认清除?  y/n\n')
             if a == 'y':
                 try:
                     os.remove(path + 'api.json')
                 except FileNotFoundError:
                     print('无配置文件')
-        elif trans == 'f':
-            os.unlink('save files/hash.json')
-        elif trans in ['n', 'y']:
-            break
+        elif trans[0:2] == 'tt':
+            if len(trans) > 2:
+                ttType = trans[-1]
+                tt_drawing_process = multiprocessing.Process(target=tt_draw, args=(int(ttType),))
+                tt_drawing_process.start()
+            else:
+                tt_drawing_process = multiprocessing.Process(target=tt_draw)
+                tt_drawing_process.start()
+        # 退出
+        elif trans == 'q':
+            exit('Exit')
         else:
             print('无此选项')
 
-    if not os.path.exists('./save files'):
-        os.mkdir('./save files')
+    if not os.path.exists('save files'):
+        os.mkdir('save files')
     # 打开文档流
     inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
     inFoFile.write("")
@@ -346,6 +363,7 @@ if __name__ == '__main__':
     # 清除字符
     if os.path.getsize('./save files/temp-Nature.txt'):
         del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
+
     print(f'爬取完成,结果保存于{date}-Nature Materials.md')
     os.remove('./save files/temp-Nature.txt')
 
