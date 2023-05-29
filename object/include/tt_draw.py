@@ -81,7 +81,3 @@ def tt_draw_picture(url, pixel_size=5, width_pixel=1.0, height_pixel=1.0):
     turtle.done()
 
 
-if __name__ == '__main__':
-    print('鸡你太美!')
-    tt_draw_picture('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 3, 0.5, 0.5)
-

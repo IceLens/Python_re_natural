@@ -310,25 +310,47 @@ if __name__ == '__main__':
     folder_dir = os.environ['APPDATA']
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
+    inFoFile = None
 
     while True:
         # 选择
         trans = input('\n(0)原文;(1)翻译;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
-
+        # 爬取入口
         if trans in ['0', '1']:
-            break
+            # 预处理和后处理
+            if not os.path.exists('save files'):
+                os.mkdir('save files')
+            # 打开文档流
+            inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
+            inFoFile.write("")
+            # 主函数
+            main()
+            # 关闭文档流
+            inFoFile.close()
+            date = time.strftime('%y-%m-%d')
+
+            # 清除字符
+            if os.path.getsize('./save files/temp-Nature.txt'):
+                del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
+
+            print(f'爬取完成,结果保存于{date}-Nature Materials.md')
+            os.remove('./save files/temp-Nature.txt')
+        # 重置 页面 Hash
         elif trans == '2':
             os.unlink('save files/hash.json')
+        # 重置配置
         elif trans == '3':
-            apiId = str(input('API账户: '))
-            secretKey = str(input('API密钥: '))
+            apiId = input('API账户: ')
+            secretKey = input('API密钥: ')
             json_api_write(path, apiId, secretKey)
+        # 查看配置
         elif trans == '4':
             api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
                 print('无密钥文件')
+        # 删除配置
         elif trans == '5':
             a = input('确认清除?  y/n\n')
             if a == 'y':
@@ -336,6 +358,7 @@ if __name__ == '__main__':
                     os.remove(path + 'api.json')
                 except FileNotFoundError:
                     print('无配置文件')
+
         elif trans[0:2] == 'tt':
             if len(trans) > 2:
                 ttType = trans[-1]
@@ -344,27 +367,12 @@ if __name__ == '__main__':
             else:
                 tt_drawing_process = multiprocessing.Process(target=tt_draw)
                 tt_drawing_process.start()
+
         # 退出
         elif trans == 'q':
-            exit('Exit')
+            break
+
         else:
             print('无此选项')
 
-    if not os.path.exists('save files'):
-        os.mkdir('save files')
-    # 打开文档流
-    inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
-    inFoFile.write("")
-    # 主函数
-    main()
-    # 关闭文档流
-    inFoFile.close()
-    date = time.strftime('%y-%m-%d')
-    # 清除字符
-    if os.path.getsize('./save files/temp-Nature.txt'):
-        del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
-
-    print(f'爬取完成,结果保存于{date}-Nature Materials.md')
-    os.remove('./save files/temp-Nature.txt')
-
-    time.sleep(5)
+    print('主进程退出')
