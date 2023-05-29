@@ -1,9 +1,10 @@
 import codecs
 import hashlib
 import json
+import multiprocessing
 import re
 import time
-import multiprocessing
+
 import jieba
 import requests
 from bs4 import BeautifulSoup
@@ -11,13 +12,9 @@ from fake_useragent import UserAgent
 
 from include.tt_draw import *
 
+
 # import random
 # import os
-'''
-    本程序为了方便,将所有函数整合于单一文件
-    
-    But 程序不应该有这么多缩进......
-'''
 
 
 # Requests 获取HTML页面
@@ -53,6 +50,11 @@ def get_abstract(url, href):
         return 'None'
 
 
+''' 
+一开始使用字符计数,字符到达120字时插入换行符 \n
+但是对于中文处理效果不尽人意'''
+
+
 # 字符换行
 def wrap_two(text):
     str(text)
@@ -62,6 +64,7 @@ def wrap_two(text):
 
 
 # 文档字符剔除
+# 由于原 HTML 页面有特殊字符导致文本输出时带有 字符，同时无法在分析函数返回的文本中修改，故使用此函数。
 def del_character_doc(infile='', outfile='', change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w', encoding='utf-8')
@@ -73,13 +76,15 @@ def del_character_doc(infile='', outfile='', change_to=' '):
 
     in_fo_open.close()
     out_fo_open.close()
-    # os.remove(infile)
 
 
+# 计算 返回的 HTML 页面第一个标题是否有变化,如无变化则不在深入分析文本以节约时间
 def web_change(tag):
+    # 第一个标题
     tag = tag.find(attrs={"class": "c-card__link u-link-inherit"}).get_text()
+    # 计算 md5 值
     tag_hash = hashlib.md5(tag.encode()).hexdigest()
-
+    # 保存 Hash 的文件是否存在
     if not os.access('save files/hash.json', os.R_OK):
         with open('save files/hash.json', 'w') as f:
             hash_dic = {"hash": "None"}
@@ -97,7 +102,7 @@ def web_change(tag):
         with open('save files/hash.json', 'w') as r:
             json.dump(cache_hash, r)
             return True
-
+    # 出错则删除 hash.json 文件
     except Exception as e:
         print(e)
         os.unlink('save files/hash.json')
@@ -140,9 +145,9 @@ def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
 
                 # 调取wrap以换行文本
                 summary, abstract = wrap_two(summary), wrap_two(abstract)
+                # 中文字符问题
                 del_char_list = ('＜sub＞', '＜/su＞')
                 change_char_list = ('<sub>', '</sub>')
-
                 for char_index in range(1):
                     summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
                     abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
@@ -158,6 +163,7 @@ def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
                                f' [发布时间]  \n{pub_time}\n\n'
                                f' ***\n\n'
                                )
+                # 刷新文件输出
                 if i % 3 == 0:
                     inFoFile.flush()
             else:
@@ -203,11 +209,11 @@ def baidu_translate(text, flag=0):
             'salt': str(salt),
             'sign': sign
         }
-
+        # 处理返回结果
         res = requests.post(baidu_api_url, data=data)
         result = res.json()
         result = result['trans_result'][0]['dst']
-
+        # 防止请求过快
         time.sleep(1)
         return result
     except Exception as e:
@@ -215,6 +221,7 @@ def baidu_translate(text, flag=0):
 
 
 # TODO 尝试爬取翻译界面 百度翻译加密导致无法爬取
+# 预使用 Selenium 库的无头浏览器进行爬取,但应时间和兼容问题放弃
 def baidu_trans_two(text):
     if type(text) is not str:
         raise TypeError
@@ -268,6 +275,7 @@ def json_api_read(file_path):
     return ini
 
 
+# 彩蛋功能的选取
 def tt_draw(tt_type=0):
     if tt_type == 0:
         tt_draw_random()
@@ -300,6 +308,7 @@ def main():
 
 
 # 程序开始
+# __name__ == '__main__' 表示程序入口,如是直接运行此脚本则加载
 if __name__ == '__main__':
     # 欢迎语句
     address = get_ip_address()
@@ -310,25 +319,47 @@ if __name__ == '__main__':
     folder_dir = os.environ['APPDATA']
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
+    inFoFile = None
 
     while True:
         # 选择
         trans = input('\n(0)原文;(1)翻译;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
-
+        # 爬取入口
+        # 预处理和后处理
         if trans in ['0', '1']:
-            break
+            if not os.path.exists('save files'):
+                os.mkdir('save files')
+            # 打开文档流
+            inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
+            inFoFile.write("")
+            # 主函数
+            main()
+            # 关闭文档流
+            inFoFile.close()
+            date = time.strftime('%y-%m-%d')
+
+            # 清除字符
+            if os.path.getsize('./save files/temp-Nature.txt'):
+                del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
+
+            print(f'爬取完成,结果保存于{date}-Nature Materials.md')
+            os.remove('./save files/temp-Nature.txt')
+        # 重置 页面 Hash
         elif trans == '2':
             os.unlink('save files/hash.json')
+        # 重置配置
         elif trans == '3':
-            apiId = str(input('API账户: '))
-            secretKey = str(input('API密钥: '))
+            apiId = input('API账户: ')
+            secretKey = input('API密钥: ')
             json_api_write(path, apiId, secretKey)
+        # 查看配置
         elif trans == '4':
             api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
                 print('无密钥文件')
+        # 删除配置
         elif trans == '5':
             a = input('确认清除?  y/n\n')
             if a == 'y':
@@ -336,6 +367,7 @@ if __name__ == '__main__':
                     os.remove(path + 'api.json')
                 except FileNotFoundError:
                     print('无配置文件')
+        # 彩蛋功能
         elif trans[0:2] == 'tt':
             if len(trans) > 2:
                 ttType = trans[-1]
@@ -344,27 +376,12 @@ if __name__ == '__main__':
             else:
                 tt_drawing_process = multiprocessing.Process(target=tt_draw)
                 tt_drawing_process.start()
+
         # 退出
         elif trans == 'q':
-            exit('Exit')
+            break
+
         else:
             print('无此选项')
 
-    if not os.path.exists('save files'):
-        os.mkdir('save files')
-    # 打开文档流
-    inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
-    inFoFile.write("")
-    # 主函数
-    main()
-    # 关闭文档流
-    inFoFile.close()
-    date = time.strftime('%y-%m-%d')
-    # 清除字符
-    if os.path.getsize('./save files/temp-Nature.txt'):
-        del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
-
-    print(f'爬取完成,结果保存于{date}-Nature Materials.md')
-    os.remove('./save files/temp-Nature.txt')
-
-    time.sleep(5)
+    print('主进程退出')

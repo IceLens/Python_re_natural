@@ -1,12 +1,17 @@
 import io
+import os
 import random
 import turtle
 import urllib.request
-import os
 
 from PIL import Image
 
+'''
+这是一个彩蛋脚本
+'''
 
+
+# 随机的美
 def tt_draw_random():
     turtle.penup()
     turtle.fd(-100)
@@ -45,18 +50,21 @@ def get_color(r, g, b, alpha=256):
     return rr, gg, bb
 
 
+# 使用 turtle 库绘制图片
 def tt_draw_picture(url, pixel_size=5, width_pixel=1.0, height_pixel=1.0):
+    # 打开本地图片
     if os.access(url, os.R_OK):
         im = Image.open(url)
+    # 打开网络图片
     else:
         image_bytes = urllib.request.urlopen(url).read()
         data_stream = io.BytesIO(image_bytes)
         im = Image.open(data_stream)
-
+    # 图片大小及其调整
     width, height = im.size
     width, height = round(width * width_pixel), round(height * height_pixel)
     im = im.resize((width, height))
-
+    # 居中图片绘制
     turtle.setup(100 + width * pixel_size, 100 + height * pixel_size, 10, 10)
     turtle.speed(60)
     turtle.penup()
@@ -80,8 +88,4 @@ def tt_draw_picture(url, pixel_size=5, width_pixel=1.0, height_pixel=1.0):
 
     turtle.done()
 
-
-if __name__ == '__main__':
-    print('鸡你太美!')
-    tt_draw_picture('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 3, 0.5, 0.5)
 
