@@ -1,9 +1,12 @@
 import codecs
 import hashlib
 import json
-import multiprocessing
 import re
+import threading
 import time
+# import random
+# import os
+from concurrent.futures import ThreadPoolExecutor
 
 import jieba
 import requests
@@ -13,12 +16,8 @@ from fake_useragent import UserAgent
 from include.tt_draw import *
 
 
-# import random
-# import os
-
-
 # Requests 获取HTML页面
-def get_html(url, timeout=60, rand=0):
+def get_html(url: str, timeout=120, rand=0) -> str:
     if rand == 0:
         headers = {
             'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -38,7 +37,7 @@ def get_html(url, timeout=60, rand=0):
 
 
 # 获取文章摘要
-def get_abstract(url, href):
+def get_abstract(url: str, href: str) -> str:
     html = get_html(url + href)
     soup = BeautifulSoup(html, "lxml")
 
@@ -56,7 +55,7 @@ def get_abstract(url, href):
 
 
 # 字符换行
-def wrap_two(text):
+def wrap_two(text) -> str:
     str(text)
     text = text.replace('。', '\n')
     text = text.replace('.', '.\n')
@@ -65,7 +64,7 @@ def wrap_two(text):
 
 # 文档字符剔除
 # 由于原 HTML 页面有特殊字符导致文本输出时带有 字符，同时无法在分析函数返回的文本中修改，故使用此函数。
-def del_character_doc(infile='', outfile='', change_to=' '):
+def del_character_doc(infile: str, outfile: str, change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w', encoding='utf-8')
     db = in_fo_open.read()
@@ -79,7 +78,7 @@ def del_character_doc(infile='', outfile='', change_to=' '):
 
 
 # 计算 返回的 HTML 页面第一个标题是否有变化,如无变化则不在深入分析文本以节约时间
-def web_change(tag):
+def web_change(tag: BeautifulSoup):
     # 第一个标题
     tag = tag.find(attrs={"class": "c-card__link u-link-inherit"}).get_text()
     # 计算 md5 值
@@ -110,7 +109,7 @@ def web_change(tag):
 
 
 # BeautifulSoup 处理HTML以提取信息
-def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
+def text_analysis(soup: BeautifulSoup):
     i = 0
     # 获取每个文本盒子
     for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
@@ -133,45 +132,63 @@ def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
                 # 序号
                 i += 1
                 # 获取摘要
+                url = 'https://www.nature.com'
                 abstract = get_abstract(url, link)
                 abstract = re.sub('(</?a.*?>)|(</?p>)', '', abstract)
 
-                # 翻译模式
-                if if_trans == '1':
-                    title = baidu_translate(title)
-                    summary = baidu_translate(summary)
-                    abstract = baidu_translate(abstract)
-                    print('翻译完成')
-
-                # 调取wrap以换行文本
-                summary, abstract = wrap_two(summary), wrap_two(abstract)
-                # 中文字符问题
-                del_char_list = ('＜sub＞', '＜/su＞')
-                change_char_list = ('<sub>', '</sub>')
-                for char_index in range(1):
-                    summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
-                    abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
-
-                print(
-                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{pub_time}\n")
-                # 将文本写入文件
-                inFoFile.write(f'{str(i)}\n'
-                               f' ## {title}.\n'
-                               f' <b>{summary}</b>\n\n'
-                               f' [摘要]  \n{abstract}\n\n'
-                               f' [文章链接]\n{url + link}\n\n'
-                               f' [发布时间]  \n{pub_time}\n\n'
-                               f' ***\n\n'
-                               )
-                # 刷新文件输出
-                if i % 3 == 0:
-                    inFoFile.flush()
+                result = {'num': str(i), 'title': title, 'summary': summary, 'abstract': abstract, 'pub_time': pub_time,
+                          'link': url + link}
+                process_and_write(result)
             else:
-                continue
-
+                pass
         except Exception as e:
             print(e)
             pass
+
+
+def process_and_write(dic: dict):
+    num = dic['num']
+    title = dic['title']
+    summary = dic['summary']
+    abstract = dic['abstract']
+    link = dic['link']
+    pub_time = dic['pub_time']
+
+    # 翻译模式
+    if trans == '1':
+        title = processPool.submit(baidu_translate, title, 0)
+        title = title.result()
+        time.sleep(1)
+        summary = processPool.submit(baidu_translate, summary, 0)
+        summary = summary.result()
+        time.sleep(1)
+        abstract = processPool.submit(baidu_translate, abstract, 0)
+        abstract = abstract.result()
+        print('翻译完成')
+
+    # 调取wrap以换行文本
+    summary, abstract = wrap_two(summary), wrap_two(abstract)
+    # 中文字符问题
+    del_char_list = ('＜sub＞', '＜/su＞')
+    change_char_list = ('<sub>', '</sub>')
+    for char_index in range(1):
+        summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
+        abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
+
+    print(
+        f"{num}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{link} \n发布时间:{pub_time}\n")
+    # 将文本写入文件
+    inFoFile.write(f'{num}\n'
+                   f' ## {title}.\n'
+                   f' <b>{summary}</b>\n\n'
+                   f' [摘要]  \n{abstract}\n\n'
+                   f' [文章链接]\n{link}\n\n'
+                   f' [发布时间]  \n{pub_time}\n\n'
+                   f' ***\n\n'
+                   )
+    # 刷新文件输出
+    if int(num) % 3 == 0:
+        inFoFile.flush()
 
 
 # BaiduAPI 翻译
@@ -213,8 +230,6 @@ def baidu_translate(text, flag=0):
         res = requests.post(baidu_api_url, data=data)
         result = res.json()
         result = result['trans_result'][0]['dst']
-        # 防止请求过快
-        time.sleep(1)
         return result
     except Exception as e:
         print(e)
@@ -255,7 +270,7 @@ def get_ip_address():
 
 
 # 写入配置文件
-def json_api_write(fdir, api_id, secret_key):
+def json_api_write(fdir: str, api_id: str, secret_key: str):
     if not os.path.exists(fdir):
         os.mkdir(fdir)
     # 使用json库
@@ -265,7 +280,7 @@ def json_api_write(fdir, api_id, secret_key):
 
 
 # 读取配置文件
-def json_api_read(file_path):
+def json_api_read(file_path: str):
     # 文件是否可读
     if not os.access(file_path, os.R_OK):
         return None
@@ -277,12 +292,17 @@ def json_api_read(file_path):
 
 # 彩蛋功能的选取
 def tt_draw(tt_type=0):
+    import multiprocessing
     if tt_type == 0:
-        tt_draw_random()
+        draw_random = threading.Thread(target=tt_draw_random)
+        draw_random.start()
     elif tt_type == 1:
-        tt_draw_polyhedral()
+        draw_polyhedral = threading.Thread(target=tt_draw_polyhedral)
+        draw_polyhedral.start()
     elif tt_type == 2:
-        tt_draw_picture('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 5, 0.5, 0.5)
+        args_picture = ('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 5, 0.5, 0.5)
+        draw_picture = multiprocessing.Process(target=tt_draw_picture, args=args_picture)
+        draw_picture.start()
     else:
         print('你干嘛,哎哟')
 
@@ -304,7 +324,7 @@ def main():
     print('请求完成,正在解析文档')
     soup_main = BeautifulSoup(html_nature, "lxml")
     if web_change(soup_main):
-        text_analysis(soup_main, trans)
+        text_analysis(soup_main)
 
 
 # 程序开始
@@ -332,6 +352,8 @@ if __name__ == '__main__':
             # 打开文档流
             inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
             inFoFile.write("")
+            if trans == 1:
+                processPool = ThreadPoolExecutor(max_workers=4)
             # 主函数
             main()
             # 关闭文档流
@@ -346,7 +368,10 @@ if __name__ == '__main__':
             os.remove('./save files/temp-Nature.txt')
         # 重置 页面 Hash
         elif trans == '2':
-            os.unlink('save files/hash.json')
+            try:
+                os.unlink('save files/hash.json')
+            except FileNotFoundError:
+                print('无此文件')
         # 重置配置
         elif trans == '3':
             apiId = input('API账户: ')
@@ -371,11 +396,9 @@ if __name__ == '__main__':
         elif trans[0:2] == 'tt':
             if len(trans) > 2:
                 ttType = trans[-1]
-                tt_drawing_process = multiprocessing.Process(target=tt_draw, args=(int(ttType),))
-                tt_drawing_process.start()
+                tt_draw(int(ttType))
             else:
-                tt_drawing_process = multiprocessing.Process(target=tt_draw)
-                tt_drawing_process.start()
+                tt_draw()
 
         # 退出
         elif trans == 'q':
