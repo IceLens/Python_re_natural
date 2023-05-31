@@ -1,9 +1,11 @@
 import codecs
 import hashlib
 import json
-import multiprocessing
 import re
 import time
+# import random
+# import os
+from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 
 import jieba
 import requests
@@ -13,12 +15,8 @@ from fake_useragent import UserAgent
 from include.tt_draw import *
 
 
-# import random
-# import os
-
-
 # Requests 获取HTML页面
-def get_html(url, timeout=60, rand=0):
+def get_html(url: str, timeout=120, rand=0) -> str:
     if rand == 0:
         headers = {
             'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -38,12 +36,18 @@ def get_html(url, timeout=60, rand=0):
 
 
 # 获取文章摘要
-def get_abstract(url, href):
+def get_abstract(url: str, href: str):
+    start = time.perf_counter()
+
     html = get_html(url + href)
     soup = BeautifulSoup(html, "lxml")
-
     text = soup.find(attrs={"id": "Abs1-content"}).select('p')[0]
+
     text = str(text)
+    text = re.sub('(</?a.*?>)|(</?p>)', '', text)
+
+    end = time.perf_counter()
+    print(f'摘要请求:  {end - start}')
     if text is not None:
         return text
     else:
@@ -56,7 +60,7 @@ def get_abstract(url, href):
 
 
 # 字符换行
-def wrap_two(text):
+def wrap_two(text) -> str:
     str(text)
     text = text.replace('。', '\n')
     text = text.replace('.', '.\n')
@@ -65,7 +69,7 @@ def wrap_two(text):
 
 # 文档字符剔除
 # 由于原 HTML 页面有特殊字符导致文本输出时带有 字符，同时无法在分析函数返回的文本中修改，故使用此函数。
-def del_character_doc(infile='', outfile='', change_to=' '):
+def del_character_doc(infile: str, outfile: str, change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w', encoding='utf-8')
     db = in_fo_open.read()
@@ -79,11 +83,15 @@ def del_character_doc(infile='', outfile='', change_to=' '):
 
 
 # 计算 返回的 HTML 页面第一个标题是否有变化,如无变化则不在深入分析文本以节约时间
-def web_change(tag):
-    # 第一个标题
-    tag = tag.find(attrs={"class": "c-card__link u-link-inherit"}).get_text()
-    # 计算 md5 值
-    tag_hash = hashlib.md5(tag.encode()).hexdigest()
+def web_change(tag: BeautifulSoup):
+    try:
+        # 第一个标题
+        tag = tag.find(attrs={"class": "c-card__link u-link-inherit"}).get_text()
+        # 计算 md5 值
+        tag_hash = hashlib.md5(tag.encode()).hexdigest()
+    except Exception as e:
+        print(e)
+        return True
     # 保存 Hash 的文件是否存在
     if not os.access('save files/hash.json', os.R_OK):
         with open('save files/hash.json', 'w') as f:
@@ -110,68 +118,84 @@ def web_change(tag):
 
 
 # BeautifulSoup 处理HTML以提取信息
-def text_analysis(soup, if_trans='0', url='https://www.nature.com'):
-    i = 0
+def start_text_analysis(soup: BeautifulSoup):
     # 获取每个文本盒子
-    for tag in soup.find_all(attrs={"class": "app-article-list-row__item"}):
-        try:
-            # 文本处理
-            # 标题
-            title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
-            title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
-            # 简介
-            summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
-            summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
-            # 文章链接'a'标签
-            link = title_link.get('href')
-            # 文章发布时间
-            pub_time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
-            pub_time = pub_time[0].get_text()
+    future_tasks = [
+        working_pool.submit(process_text_analysis, tag)
+        for tag in soup.find_all(attrs={"class": "app-article-list-row__item"})
+    ]
+    wait(future_tasks, return_when=ALL_COMPLETED)
 
-            # 输出处理后文本
-            if title and summary is not None:
-                # 序号
-                i += 1
-                # 获取摘要
-                abstract = get_abstract(url, link)
-                abstract = re.sub('(</?a.*?>)|(</?p>)', '', abstract)
 
-                # 翻译模式
-                if if_trans == '1':
-                    title = baidu_translate(title)
-                    summary = baidu_translate(summary)
-                    abstract = baidu_translate(abstract)
-                    print('翻译完成')
+def process_text_analysis(tag):
+    try:
+        # 文本处理
+        # 标题
+        title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
+        title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
+        # 简介
+        summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
+        summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
+        # 文章链接'a'标签
+        link = title_link.get('href')
+        # 文章发布时间
+        pub_time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
+        pub_time = pub_time[0].get_text()
 
-                # 调取wrap以换行文本
-                summary, abstract = wrap_two(summary), wrap_two(abstract)
-                # 中文字符问题
-                del_char_list = ('＜sub＞', '＜/su＞')
-                change_char_list = ('<sub>', '</sub>')
-                for char_index in range(1):
-                    summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
-                    abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
+        # 输出处理后文本
+        if title and summary is not None:
 
-                print(
-                    f"{i}. \n标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{url}{link} \n发布时间:{pub_time}\n")
-                # 将文本写入文件
-                inFoFile.write(f'{str(i)}\n'
-                               f' ## {title}.\n'
-                               f' <b>{summary}</b>\n\n'
-                               f' [摘要]  \n{abstract}\n\n'
-                               f' [文章链接]\n{url + link}\n\n'
-                               f' [发布时间]  \n{pub_time}\n\n'
-                               f' ***\n\n'
-                               )
-                # 刷新文件输出
-                if i % 3 == 0:
-                    inFoFile.flush()
-            else:
-                continue
+            # 获取摘要
+            url = 'https://www.nature.com'
 
-        except Exception as e:
-            print(e)
+            abstract = get_abstract(url, link)
+            result = {
+                'title': title, 'summary': summary,
+                'abstract': abstract, 'pub_time': pub_time,
+                'link': url + link
+            }
+            process_and_write(result)
+        else:
             pass
+    except Exception as e:
+        print(e)
+        pass
+
+
+def process_and_write(dic: dict):
+    title = dic['title']
+    summary = dic['summary']
+    abstract = dic['abstract']
+    link = dic['link']
+    pub_time = dic['pub_time']
+
+    # 翻译模式
+    if trans == '1':
+        title = baidu_translate(title)
+        summary = baidu_translate(summary)
+        abstract = baidu_translate(abstract)
+        print('翻译完成')
+
+    # 调取wrap以换行文本
+    summary, abstract = wrap_two(summary), wrap_two(abstract)
+    # 中文字符问题
+    del_char_list = ('＜sub＞', '＜/su＞')
+    change_char_list = ('<sub>', '</sub>')
+    for char_index in range(1):
+        summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
+        abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
+
+    print(
+        f"标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{link} \n发布时间:{pub_time}\n")
+    # 将文本写入文件
+    inFoFile.write(
+        f' ## {title}.\n'
+        f' <b>{summary}</b>\n\n'
+        f' [摘要]  \n{abstract}\n\n'
+        f' [文章链接]\n{link}\n\n'
+        f' [发布时间]  \n{pub_time}\n\n'
+        f' ***\n\n'
+    )
 
 
 # BaiduAPI 翻译
@@ -213,7 +237,6 @@ def baidu_translate(text, flag=0):
         res = requests.post(baidu_api_url, data=data)
         result = res.json()
         result = result['trans_result'][0]['dst']
-        # 防止请求过快
         time.sleep(1)
         return result
     except Exception as e:
@@ -255,7 +278,7 @@ def get_ip_address():
 
 
 # 写入配置文件
-def json_api_write(fdir, api_id, secret_key):
+def json_api_write(fdir: str, api_id: str, secret_key: str):
     if not os.path.exists(fdir):
         os.mkdir(fdir)
     # 使用json库
@@ -265,7 +288,7 @@ def json_api_write(fdir, api_id, secret_key):
 
 
 # 读取配置文件
-def json_api_read(file_path):
+def json_api_read(file_path: str):
     # 文件是否可读
     if not os.access(file_path, os.R_OK):
         return None
@@ -278,11 +301,12 @@ def json_api_read(file_path):
 # 彩蛋功能的选取
 def tt_draw(tt_type=0):
     if tt_type == 0:
-        tt_draw_random()
+        working_pool.submit(tt_draw_random)
     elif tt_type == 1:
-        tt_draw_polyhedral()
+        working_pool.submit(tt_draw_polyhedral)
     elif tt_type == 2:
-        tt_draw_picture('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 5, 0.5, 0.5)
+        args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
+        working_pool.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
     else:
         print('你干嘛,哎哟')
 
@@ -302,9 +326,14 @@ def main():
     html_nature = get_html(url_mat, request_headers_type)
 
     print('请求完成,正在解析文档')
+    start = time.perf_counter()
+
+    # html_nature = open(r'D:\Lumen\Project\reHTML\test\HTML.html', 'r', encoding='utf-8')
     soup_main = BeautifulSoup(html_nature, "lxml")
     if web_change(soup_main):
-        text_analysis(soup_main, trans)
+        start_text_analysis(soup_main)
+        end = time.perf_counter()
+        print(f'分析时间共: {end - start}')
 
 
 # 程序开始
@@ -320,6 +349,7 @@ if __name__ == '__main__':
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
     inFoFile = None
+    working_pool = ThreadPoolExecutor(max_workers=4)
 
     while True:
         # 选择
@@ -346,7 +376,10 @@ if __name__ == '__main__':
             os.remove('./save files/temp-Nature.txt')
         # 重置 页面 Hash
         elif trans == '2':
-            os.unlink('save files/hash.json')
+            try:
+                os.unlink('save files/hash.json')
+            except FileNotFoundError:
+                print('无此文件')
         # 重置配置
         elif trans == '3':
             apiId = input('API账户: ')
@@ -371,11 +404,9 @@ if __name__ == '__main__':
         elif trans[0:2] == 'tt':
             if len(trans) > 2:
                 ttType = trans[-1]
-                tt_drawing_process = multiprocessing.Process(target=tt_draw, args=(int(ttType),))
-                tt_drawing_process.start()
+                tt_draw(int(ttType))
             else:
-                tt_drawing_process = multiprocessing.Process(target=tt_draw)
-                tt_drawing_process.start()
+                tt_draw()
 
         # 退出
         elif trans == 'q':
