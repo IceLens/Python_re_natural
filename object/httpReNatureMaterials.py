@@ -1,18 +1,18 @@
 import codecs
 import hashlib
 import json
+import os
+import random
 import re
 import time
-# import random
-# import os
-from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
+from concurrent.futures import ThreadPoolExecutor
 
 import jieba
 import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
-from include.tt_draw import *
+from include.tt_draw import tt_draw_random, tt_draw_polyhedral, tt_draw_picture
 
 
 # Requests 获取HTML页面
@@ -31,35 +31,14 @@ def get_html(url: str, timeout=120, rand=0) -> str:
         r.encoding = 'utf-8'
         return r.text
     except Exception as e:
+        print('get_html:  ', end='')
         print(e)
         pass
 
 
-# 获取文章摘要
-def get_abstract(url: str, href: str):
-    start = time.perf_counter()
-
-    html = get_html(url + href)
-    soup = BeautifulSoup(html, "lxml")
-    text = soup.find(attrs={"id": "Abs1-content"}).select('p')[0]
-
-    text = str(text)
-    text = re.sub('(</?a.*?>)|(</?p>)', '', text)
-
-    end = time.perf_counter()
-    print(f'摘要请求:  {end - start}')
-    if text is not None:
-        return text
-    else:
-        return 'None'
-
-
-''' 
-一开始使用字符计数,字符到达120字时插入换行符 \n
-但是对于中文处理效果不尽人意'''
-
-
 # 字符换行
+# 一开始使用字符计数,字符到达120字时插入换行符 \n
+# 但是对于中文处理效果不尽人意
 def wrap_two(text) -> str:
     str(text)
     text = text.replace('。', '\n')
@@ -90,6 +69,7 @@ def web_change(tag: BeautifulSoup):
         # 计算 md5 值
         tag_hash = hashlib.md5(tag.encode()).hexdigest()
     except Exception as e:
+        print('web_change:  ', end='')
         print(e)
         return True
     # 保存 Hash 的文件是否存在
@@ -112,90 +92,10 @@ def web_change(tag: BeautifulSoup):
             return True
     # 出错则删除 hash.json 文件
     except Exception as e:
+        print('web_change:  ', end='')
         print(e)
         os.unlink('save files/hash.json')
         return True
-
-
-# BeautifulSoup 处理HTML以提取信息
-def start_text_analysis(soup: BeautifulSoup):
-    # 获取每个文本盒子
-    future_tasks = [
-        working_pool.submit(process_text_analysis, tag)
-        for tag in soup.find_all(attrs={"class": "app-article-list-row__item"})
-    ]
-    wait(future_tasks, return_when=ALL_COMPLETED)
-
-
-def process_text_analysis(tag):
-    try:
-        # 文本处理
-        # 标题
-        title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
-        title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
-        # 简介
-        summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
-        summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
-        # 文章链接'a'标签
-        link = title_link.get('href')
-        # 文章发布时间
-        pub_time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
-        pub_time = pub_time[0].get_text()
-
-        # 输出处理后文本
-        if title and summary is not None:
-
-            # 获取摘要
-            url = 'https://www.nature.com'
-
-            abstract = get_abstract(url, link)
-            result = {
-                'title': title, 'summary': summary,
-                'abstract': abstract, 'pub_time': pub_time,
-                'link': url + link
-            }
-            process_and_write(result)
-        else:
-            pass
-    except Exception as e:
-        print(e)
-        pass
-
-
-def process_and_write(dic: dict):
-    title = dic['title']
-    summary = dic['summary']
-    abstract = dic['abstract']
-    link = dic['link']
-    pub_time = dic['pub_time']
-
-    # 翻译模式
-    if trans == '1':
-        title = baidu_translate(title)
-        summary = baidu_translate(summary)
-        abstract = baidu_translate(abstract)
-        print('翻译完成')
-
-    # 调取wrap以换行文本
-    summary, abstract = wrap_two(summary), wrap_two(abstract)
-    # 中文字符问题
-    del_char_list = ('＜sub＞', '＜/su＞')
-    change_char_list = ('<sub>', '</sub>')
-    for char_index in range(1):
-        summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
-        abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
-
-    print(
-        f"标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{link} \n发布时间:{pub_time}\n")
-    # 将文本写入文件
-    inFoFile.write(
-        f' ## {title}.\n'
-        f' <b>{summary}</b>\n\n'
-        f' [摘要]  \n{abstract}\n\n'
-        f' [文章链接]\n{link}\n\n'
-        f' [发布时间]  \n{pub_time}\n\n'
-        f' ***\n\n'
-    )
 
 
 # BaiduAPI 翻译
@@ -240,6 +140,7 @@ def baidu_translate(text, flag=0):
         time.sleep(1)
         return result
     except Exception as e:
+        print('baidu_translate:  ', end='')
         print(e)
 
 
@@ -249,6 +150,133 @@ def baidu_trans_two(text):
     if type(text) is not str:
         raise TypeError
     exit('未完成')
+
+
+def process_and_write(dic: dict):
+    title = dic['title']
+    summary = dic['summary']
+    abstract = dic['abstract']
+    link = dic['link']
+    pub_time = dic['pub_time']
+
+    # 翻译模式
+    if trans == 'y':
+        title = baidu_translate(title)
+        summary = baidu_translate(summary)
+        abstract = baidu_translate(abstract)
+        # 中文字符问题
+        del_char_list = ('＜sub＞', '＜/su＞')
+        change_char_list = ('<sub>', '</sub>')
+        for char_index in range(1):
+            summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
+            abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
+        print('翻译完成')
+    # 调取wrap以换行文本
+    summary, abstract = wrap_two(summary), wrap_two(abstract)
+    print(
+        f"标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{link} \n发布时间:{pub_time}\n")
+    # 将文本写入文件
+    inFoFile.write(
+        f'# {title}.\n'
+        f'<b>{summary}</b>\n\n'
+        f'[摘要]'
+        f'\n![](https:{dic["image_link"]})\n'
+        f'\n{dic["image_describe"]}\n'
+        f'{abstract}'
+        f'[文章链接]\n{link}\n\n'
+        f'[发布时间]  \n{pub_time}\n\n'
+        f'***\n\n'
+    )
+    inFoFile.flush()
+
+
+# 获取文章摘要
+def get_abstract(url: str, href: str):
+    html = get_html(url + href)
+    soup = BeautifulSoup(html, "lxml")
+    [s.extract() for s in soup.find_all(attrs={'class': 'recommended__image'})]
+
+    image_describe = soup.find(attrs={'class': 'figure__caption u-sans-serif'}).get_text()
+    images_link = soup.find(attrs={'class': 'figure__image'}).get('src')
+    text = soup.find(attrs={'class': 'c-article-body main-content'})
+    text = re.sub(
+        r'(</?a.*?>)|(</?p.*?>)|(<article.*?</article>)|(</?source.*?>)|(</?div.*?>)|(</?span.*?>)|(<figure([\s\S]*)(</figure>))',
+        '',
+        str(text))
+    images_link = re.sub('\n', '', str(images_link))
+
+    if text is not None:
+        return text, image_describe, images_link
+    else:
+        return None
+
+
+def process_text_analysis(tag):
+    try:
+        # 文本处理
+        # 标题
+        title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
+        title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
+        # 简介
+        summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
+        summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
+        # 文章链接'a'标签
+        link = title_link.get('href')
+        # 文章发布时间
+        pub_time = tag.select("time[class='c-meta__item']")
+        pub_time = pub_time[0].get_text()
+
+        # 输出处理后文本
+        if title and summary is not None:
+
+            # 获取摘要
+            url = 'https://www.nature.com'
+
+            abstract, image_describe, images_link = get_abstract(url, link)
+            result = {
+                'title': title, 'summary': summary,
+                'abstract': abstract, 'image_describe': image_describe,
+                'pub_time': pub_time, 'image_link': images_link,
+                'link': url + link
+            }
+            process_and_write(result)
+            return 'OK'
+        else:
+            pass
+    except Exception as e:
+        print('process_text_analysis:  ', end='')
+        print(e)
+        pass
+
+
+# BeautifulSoup 处理HTML以提取信息 app-reviews-row__item
+def start_text_analysis(soup: BeautifulSoup):
+    start = time.perf_counter()
+    # 获取每个文本盒子
+    all_boxs = ['"app-featured-row__item"', '"app-reviews-row__item"', '"app-news-row"']
+    tags = []
+
+    for box in all_boxs:
+        for tag in soup.select(f'li[class={box}]'):
+            tags.append(tag)
+    working_pool.map(process_text_analysis, tags)
+    working_pool.shutdown(wait=True)
+
+    end = time.perf_counter()
+    print(f'Start_text_analysis{end - start}')
+
+
+# 彩蛋功能的选取
+def tt_draw(tt_type=0):
+    if tt_type == 0:
+        working_pool.submit(tt_draw_random)
+    elif tt_type == 1:
+        working_pool.submit(tt_draw_polyhedral)
+    elif tt_type == 2:
+        args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
+        working_pool.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
+    else:
+        print('你干嘛,哎哟')
 
 
 # 获取ip属地以推测用户地址（没什么用）
@@ -274,6 +302,7 @@ def get_ip_address():
             return None
 
     except Exception as e:
+        print('get_ip_address:  ', end='')
         print(e)
 
 
@@ -298,24 +327,11 @@ def json_api_read(file_path: str):
     return ini
 
 
-# 彩蛋功能的选取
-def tt_draw(tt_type=0):
-    if tt_type == 0:
-        working_pool.submit(tt_draw_random)
-    elif tt_type == 1:
-        working_pool.submit(tt_draw_polyhedral)
-    elif tt_type == 2:
-        args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
-        working_pool.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
-    else:
-        print('你干嘛,哎哟')
-
-
 # Main function
 def main():
-    url_mat = 'https://www.nature.com/nmat/'
+    url_mat = 'https://www.nature.com/'
 
-    request_headers_type = input('是否使用随机请求头\n y/n :  ')
+    request_headers_type = input('(y/n)是否使用随机请求头:  ')
     if request_headers_type == 'n':
         request_headers_type = 0
     else:
@@ -326,14 +342,11 @@ def main():
     html_nature = get_html(url_mat, request_headers_type)
 
     print('请求完成,正在解析文档')
-    start = time.perf_counter()
 
     # html_nature = open(r'D:\Lumen\Project\reHTML\test\HTML.html', 'r', encoding='utf-8')
     soup_main = BeautifulSoup(html_nature, "lxml")
     if web_change(soup_main):
         start_text_analysis(soup_main)
-        end = time.perf_counter()
-        print(f'分析时间共: {end - start}')
 
 
 # 程序开始
@@ -349,20 +362,21 @@ if __name__ == '__main__':
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
     inFoFile = None
-    working_pool = ThreadPoolExecutor(max_workers=4)
+    working_pool = ThreadPoolExecutor(max_workers=5)
 
     while True:
         # 选择
-        trans = input('\n(0)原文;(1)翻译;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
+        trans = input('\n(1)获取;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
         # 爬取入口
         # 预处理和后处理
-        if trans in ['0', '1']:
+        if trans == '1':
             if not os.path.exists('save files'):
                 os.mkdir('save files')
             # 打开文档流
             inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
             inFoFile.write("")
             # 主函数
+            trans = input('(y/n)是否翻译?:  ')
             main()
             # 关闭文档流
             inFoFile.close()
@@ -370,14 +384,15 @@ if __name__ == '__main__':
 
             # 清除字符
             if os.path.getsize('./save files/temp-Nature.txt'):
-                del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature Materials.md')
+                del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature.md')
 
-            print(f'爬取完成,结果保存于{date}-Nature Materials.md')
+            print(f'爬取完成,结果保存于{date}-Nature.md')
             os.remove('./save files/temp-Nature.txt')
         # 重置 页面 Hash
         elif trans == '2':
             try:
                 os.unlink('save files/hash.json')
+                print('刷新完成')
             except FileNotFoundError:
                 print('无此文件')
         # 重置配置
@@ -407,7 +422,6 @@ if __name__ == '__main__':
                 tt_draw(int(ttType))
             else:
                 tt_draw()
-
         # 退出
         elif trans == 'q':
             break
