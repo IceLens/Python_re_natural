@@ -4,8 +4,10 @@ import json
 import os
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 
 import jieba
 import requests
@@ -15,15 +17,15 @@ from fake_useragent import UserAgent
 from include.tt_draw import tt_draw_random, tt_draw_polyhedral, tt_draw_picture
 
 
-# Requests 获取HTML页面  referer: https://www.nature.com/
+# Requests 获取HTML页面
 def get_html(url: str, rand=False, do_re_try=True, re_try_times=5, timeout=60) -> str:
     headers = {'referer': 'https://www.nature.com/'}
     if not rand:
         headers[
             'User-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'
     else:
-        ua = UserAgent()
-        headers['User-agent'] = ua.random
+        ua = UserAgent(use_external_data=True)
+        headers['User-agent'] = ua.edge
 
     i = 0
     while i < re_try_times:
@@ -168,6 +170,7 @@ def process_and_write(dic: dict):
 
     # 翻译模式
     if select == 'y':
+        lock.acquire()
         title = baidu_translate(title)
         summary = baidu_translate(summary)
         abstract = baidu_translate(abstract)
@@ -177,6 +180,7 @@ def process_and_write(dic: dict):
         for char_index in range(1):
             summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
             abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
+        lock.release()
         print('翻译完成')
 
     # 调取wrap以换行文本
@@ -198,7 +202,7 @@ def process_and_write(dic: dict):
 
 # 获取文章摘要
 def get_abstract(url: str):
-    html = get_html(url, rand=request_headers_type, re_try_times=2)
+    html = get_html(url, rand=requestHeadersType, re_try_times=2)
     soup = BeautifulSoup(html, "lxml")
     [s.extract() for s in soup.find_all(attrs={'class': 'recommended pull pull--left u-sans-serif'})]
 
@@ -280,16 +284,18 @@ def start_text_analysis(soup: BeautifulSoup):
 
 # 彩蛋功能的选取
 def tt_draw(tt_type=0):
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        if tt_type == 0:
-            executor.submit(tt_draw_random)
-        elif tt_type == 1:
-            executor.submit(tt_draw_polyhedral)
-        elif tt_type == 2:
-            args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
-            executor.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
-        else:
-            print('你干嘛,哎哟')
+    if tt_type == 0:
+        draw_random = Thread(target=tt_draw_random, daemon=True)
+        draw_random.start()
+    elif tt_type == 1:
+        draw_polyhedral = Thread(target=tt_draw_polyhedral, daemon=True)
+        draw_polyhedral.start()
+    elif tt_type == 2:
+        args_picture = ('https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png', 5, 0.5, 0.5)
+        draw_picture = Thread(target=tt_draw_picture, args=args_picture)
+        draw_picture.start()
+    else:
+        print('你干嘛,哎哟')
 
 
 # 获取ip属地以推测用户地址（没什么用）
@@ -342,17 +348,17 @@ def json_api_read(file_path: str):
 # Main function
 def main():
     url_n = 'https://www.nature.com/'
-    global request_headers_type
-    request_headers_type = input('(y/n)是否使用随机请求头:  ')
+    global requestHeadersType
+    requestHeadersType = input('(y/n)是否使用随机请求头:  ')
 
-    if request_headers_type == 'n':
-        request_headers_type = False
+    if requestHeadersType == 'n':
+        requestHeadersType = False
     else:
         print('已选择随机请求头')
-        request_headers_type = True
+        requestHeadersType = True
 
     print('开始爬取\n' + '——' * 30)
-    html_nature = get_html(url_n, rand=request_headers_type)
+    html_nature = get_html(url_n, rand=requestHeadersType)
 
     try:
         soup_main = BeautifulSoup(html_nature, "lxml")
@@ -377,8 +383,9 @@ if __name__ == '__main__':
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
     inFoFile = None
+    lock = threading.RLock()
     urlCollect = set()
-    request_headers_type = False
+    requestHeadersType = False
 
     while True:
         # 选择
@@ -404,7 +411,6 @@ if __name__ == '__main__':
 
             print(f'爬取完成,结果保存于{date}-Nature.md')
             os.remove('./save files/temp-Nature.txt')
-            break
         # 重置 页面 Hash
         elif select == '2':
             try:
