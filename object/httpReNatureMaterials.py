@@ -16,24 +16,30 @@ from include.tt_draw import tt_draw_random, tt_draw_polyhedral, tt_draw_picture
 
 
 # Requests 获取HTML页面
-def get_html(url: str, timeout=120, rand=0) -> str:
-    if rand == 0:
+def get_html(url: str, rand=False, do_re_try=True, re_try_times=5, timeout=60) -> str:
+    if not rand:
         headers = {
             'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                           'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'}
     else:
-        ua = UserAgent(browsers=['edge', 'chrome'])
+        ua = UserAgent()
         headers = ua.random
-
-    try:
-        r = requests.get(url, headers=headers, timeout=timeout)
-        r.raise_for_status()
-        r.encoding = 'utf-8'
-        return r.text
-    except Exception as e:
-        print('get_html:  ', end='')
-        print(e)
-        pass
+    i = 0
+    while i < re_try_times:
+        try:
+            r = requests.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            r.encoding = 'utf-8'
+            return r.text
+        except Exception as e:
+            print(f'\rRetry connecting... {i + 1}/{re_try_times}', end='')
+            if i >= 6 or not do_re_try:
+                print('\r\nget_html:  ', end='')
+                print(e)
+                break
+        finally:
+            time.sleep(0.5)
+            i += 1
 
 
 # 字符换行
@@ -46,9 +52,9 @@ def wrap_two(text) -> str:
     return text
 
 
-# 文档字符剔除
+# 文档字符修改
 # 由于原 HTML 页面有特殊字符导致文本输出时带有 字符，同时无法在分析函数返回的文本中修改，故使用此函数。
-def del_character_doc(infile: str, outfile: str, change_to=' '):
+def change_character_doc(infile: str, outfile: str, change_to=' '):
     in_fo_open = open(infile, 'r', encoding='utf-8')
     out_fo_open = open(outfile, 'w', encoding='utf-8')
     db = in_fo_open.read()
@@ -160,7 +166,7 @@ def process_and_write(dic: dict):
     pub_time = dic['pub_time']
 
     # 翻译模式
-    if trans == 'y':
+    if select == 'y':
         title = baidu_translate(title)
         summary = baidu_translate(summary)
         abstract = baidu_translate(abstract)
@@ -171,18 +177,17 @@ def process_and_write(dic: dict):
             summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
             abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
         print('翻译完成')
+
     # 调取wrap以换行文本
     summary, abstract = wrap_two(summary), wrap_two(abstract)
     print(
-        f"标题:{title}. \n简介:{summary} \n摘要:{abstract} \n文章链接:{link} \n发布时间:{pub_time}\n")
+        f"标题:{title}.\n")
     # 将文本写入文件
     inFoFile.write(
         f'# {title}.\n'
         f'<b>{summary}</b>\n\n'
         f'[摘要]'
-        f'\n![](https:{dic["image_link"]})\n'
-        f'\n{dic["image_describe"]}\n'
-        f'{abstract}'
+        f'\n{abstract}\n\n'
         f'[文章链接]\n{link}\n\n'
         f'[发布时间]  \n{pub_time}\n\n'
         f'***\n\n'
@@ -191,24 +196,21 @@ def process_and_write(dic: dict):
 
 
 # 获取文章摘要
-def get_abstract(url: str, href: str):
-    html = get_html(url + href)
+def get_abstract(url: str):
+    html = get_html(url, rand=request_headers_type, re_try_times=2)
     soup = BeautifulSoup(html, "lxml")
-    [s.extract() for s in soup.find_all(attrs={'class': 'recommended__image'})]
+    [s.extract() for s in soup.find_all(attrs={'class': 'recommended pull pull--left u-sans-serif'})]
 
-    image_describe = soup.find(attrs={'class': 'figure__caption u-sans-serif'}).get_text()
-    images_link = soup.find(attrs={'class': 'figure__image'}).get('src')
+    # images_link = soup.find_all(attrs={'class': 'figure__image'})
     text = soup.find(attrs={'class': 'c-article-body main-content'})
+    text = str(text)
+    text = text.replace('<h2>', '\n### ').replace('</h2>', '\n')
     text = re.sub(
-        r'(</?a.*?>)|(</?p.*?>)|(<article.*?</article>)|(</?source.*?>)|(</?div.*?>)|(</?span.*?>)|(<figure([\s\S]*)(</figure>))',
+        r'(</?a.*?>)|(</?p.*?>)|(<article.*?</article>)|(</source>)|(</?div.*?>)|(</?span.*?>)',
         '',
-        str(text))
-    images_link = re.sub('\n', '', str(images_link))
+        text)
 
-    if text is not None:
-        return text, image_describe, images_link
-    else:
-        return None
+    return text
 
 
 def process_text_analysis(tag):
@@ -218,49 +220,58 @@ def process_text_analysis(tag):
         title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
         title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
         # 简介
-        summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"}).select('p')[0]
-        summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
+        summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"})
+        if summary is not None:
+            summary = summary.select('p')[0]
+            summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
+        else:
+            summary = 'None'
         # 文章链接'a'标签
         link = title_link.get('href')
         # 文章发布时间
         pub_time = tag.select("time[class='c-meta__item']")
-        pub_time = pub_time[0].get_text()
-
+        if pub_time is not None:
+            pub_time = pub_time[0].get_text()
+        else:
+            pub_time = tag.select("time[class='c-meta__item c-meta__item--block-at-lg']")
+            pub_time = pub_time[0].get_text()
         # 输出处理后文本
-        if title and summary is not None:
-
+        if title is not None:
             # 获取摘要
             url = 'https://www.nature.com'
-
-            abstract, image_describe, images_link = get_abstract(url, link)
+            url = url + link
+            url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+            if url_hash in urlCollect:
+                return
+            else:
+                urlCollect.add(url_hash)
+            abstract = get_abstract(url)
             result = {
                 'title': title, 'summary': summary,
-                'abstract': abstract, 'image_describe': image_describe,
-                'pub_time': pub_time, 'image_link': images_link,
-                'link': url + link
+                'abstract': abstract,
+                'pub_time': pub_time,
+                'link': url
             }
             process_and_write(result)
-            return 'OK'
         else:
             pass
     except Exception as e:
-        print('process_text_analysis:  ', end='')
-        print(e)
-        pass
+        print('\r\nprocess_text_analysis:  ' + str(e), end='')
 
 
 # BeautifulSoup 处理HTML以提取信息 app-reviews-row__item
 def start_text_analysis(soup: BeautifulSoup):
     start = time.perf_counter()
     # 获取每个文本盒子
-    all_boxs = ['"app-featured-row__item"', '"app-reviews-row__item"', '"app-news-row"']
+    all_boxs = ['"app-featured-row__item"', '"app-news-row__item"',
+                '"app-reviews-row__item"']
     tags = []
-
-    for box in all_boxs:
-        for tag in soup.select(f'li[class={box}]'):
-            tags.append(tag)
-    working_pool.map(process_text_analysis, tags)
-    working_pool.shutdown(wait=True)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for box in all_boxs:
+            for tag in soup.select(f'li[class={box}]'):
+                tags.append(tag)
+        executor.map(process_text_analysis, tags)
+        executor.shutdown(wait=True)
 
     end = time.perf_counter()
     print(f'Start_text_analysis{end - start}')
@@ -268,22 +279,23 @@ def start_text_analysis(soup: BeautifulSoup):
 
 # 彩蛋功能的选取
 def tt_draw(tt_type=0):
-    if tt_type == 0:
-        working_pool.submit(tt_draw_random)
-    elif tt_type == 1:
-        working_pool.submit(tt_draw_polyhedral)
-    elif tt_type == 2:
-        args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
-        working_pool.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
-    else:
-        print('你干嘛,哎哟')
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        if tt_type == 0:
+            executor.submit(tt_draw_random)
+        elif tt_type == 1:
+            executor.submit(tt_draw_polyhedral)
+        elif tt_type == 2:
+            args_picture = 'https://www.yxlumen.com.cn/saveFiles/chicken_so_beautiful.png'
+            executor.submit(tt_draw_picture, args_picture, 5, 0.5, 0.5)
+        else:
+            print('你干嘛,哎哟')
 
 
 # 获取ip属地以推测用户地址（没什么用）
 def get_ip_address():
     url = 'https://2023.ip138.com//'
     try:
-        html = get_html(url)
+        html = get_html(url, do_re_try=False)
         soup = BeautifulSoup(html, 'lxml')
 
         ip_address = soup.find('p').get_text()
@@ -302,8 +314,7 @@ def get_ip_address():
             return None
 
     except Exception as e:
-        print('get_ip_address:  ', end='')
-        print(e)
+        print('get_ip_address:  ' + str(e), end='')
 
 
 # 写入配置文件
@@ -329,23 +340,26 @@ def json_api_read(file_path: str):
 
 # Main function
 def main():
-    url_mat = 'https://www.nature.com/'
-
+    url_n = 'https://www.nature.com/'
+    global request_headers_type
     request_headers_type = input('(y/n)是否使用随机请求头:  ')
+
     if request_headers_type == 'n':
-        request_headers_type = 0
+        request_headers_type = False
     else:
         print('已选择随机请求头')
-        request_headers_type = 1
+        request_headers_type = True
 
     print('开始爬取\n' + '——' * 30)
-    html_nature = get_html(url_mat, request_headers_type)
+    html_nature = get_html(url_n, rand=request_headers_type)
 
-    print('请求完成,正在解析文档')
-
-    # html_nature = open(r'D:\Lumen\Project\reHTML\test\HTML.html', 'r', encoding='utf-8')
-    soup_main = BeautifulSoup(html_nature, "lxml")
+    try:
+        soup_main = BeautifulSoup(html_nature, "lxml")
+    except Exception as e:
+        print('\r\nBs4:  ' + str(e), end='')
+        exit('链接超时')
     if web_change(soup_main):
+        print('请求完成,正在解析文档')
         start_text_analysis(soup_main)
 
 
@@ -362,21 +376,22 @@ if __name__ == '__main__':
     file_name = 'api.json'
     path = folder_dir + '\\pyhttpRe\\'
     inFoFile = None
-    working_pool = ThreadPoolExecutor(max_workers=5)
+    urlCollect = set()
+    request_headers_type = False
 
     while True:
         # 选择
-        trans = input('\n(1)获取;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
+        select = input('\n(1)获取;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
         # 爬取入口
         # 预处理和后处理
-        if trans == '1':
+        if select == '1':
             if not os.path.exists('save files'):
                 os.mkdir('save files')
             # 打开文档流
             inFoFile = codecs.open("./save files/temp-Nature.txt", 'w+', 'utf-8')
             inFoFile.write("")
             # 主函数
-            trans = input('(y/n)是否翻译?:  ')
+            select = input('(y/n)是否翻译?:  ')
             main()
             # 关闭文档流
             inFoFile.close()
@@ -384,31 +399,32 @@ if __name__ == '__main__':
 
             # 清除字符
             if os.path.getsize('./save files/temp-Nature.txt'):
-                del_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature.md')
+                change_character_doc('./save files/temp-Nature.txt', f'./save files/{date}-Nature.md')
 
             print(f'爬取完成,结果保存于{date}-Nature.md')
             os.remove('./save files/temp-Nature.txt')
+            break
         # 重置 页面 Hash
-        elif trans == '2':
+        elif select == '2':
             try:
                 os.unlink('save files/hash.json')
                 print('刷新完成')
             except FileNotFoundError:
                 print('无此文件')
         # 重置配置
-        elif trans == '3':
+        elif select == '3':
             apiId = input('API账户: ')
             secretKey = input('API密钥: ')
             json_api_write(path, apiId, secretKey)
         # 查看配置
-        elif trans == '4':
+        elif select == '4':
             api = json_api_read(path + 'api.json')
             if api is not None:
                 print(f'API账户: {api["api_id"]}\nAPI密钥: {api["secret_key"]}')
             else:
                 print('无密钥文件')
         # 删除配置
-        elif trans == '5':
+        elif select == '5':
             a = input('确认清除?  y/n\n')
             if a == 'y':
                 try:
@@ -416,14 +432,14 @@ if __name__ == '__main__':
                 except FileNotFoundError:
                     print('无配置文件')
         # 彩蛋功能
-        elif trans[0:2] == 'tt':
-            if len(trans) > 2:
-                ttType = trans[-1]
+        elif select[0:2] == 'tt':
+            if len(select) > 2:
+                ttType = select[-1]
                 tt_draw(int(ttType))
             else:
                 tt_draw()
         # 退出
-        elif trans == 'q':
+        elif select == 'q':
             break
 
         else:
