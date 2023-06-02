@@ -15,15 +15,16 @@ from fake_useragent import UserAgent
 from include.tt_draw import tt_draw_random, tt_draw_polyhedral, tt_draw_picture
 
 
-# Requests 获取HTML页面
+# Requests 获取HTML页面  referer: https://www.nature.com/
 def get_html(url: str, rand=False, do_re_try=True, re_try_times=5, timeout=60) -> str:
+    headers = {'referer': 'https://www.nature.com/'}
     if not rand:
-        headers = {
-            'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'}
+        headers[
+            'User-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'
     else:
         ua = UserAgent()
-        headers = ua.random
+        headers['User-agent'] = ua.random
+
     i = 0
     while i < re_try_times:
         try:
