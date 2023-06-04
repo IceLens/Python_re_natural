@@ -111,9 +111,7 @@ def web_change(tag: BeautifulSoup):
 
 # BaiduAPI 翻译
 # 一次请求过多会出现文本抛弃现象
-# TODO 文本过长时分割文本使之满足接口限制
-# max_single_request=1000
-def baidu_translate(text, qps=1, flag=0) -> str:
+def baidu_translate(text: str, flag=0, qps=1, max_require_length=1000) -> str:
     # 检测本地是否有配置文件
     if os.path.isfile(path + fileName):
         api_list = json_api_read(path + fileName)
@@ -134,30 +132,39 @@ def baidu_translate(text, qps=1, flag=0) -> str:
     else:
         to_lang = 'zh'
 
-    try:
-        # 百度翻译api 要求格式
-        salt = random.randint(3276, 65536)
-        sign = api_id + text + str(salt) + secret_key
-        sign = hashlib.md5(sign.encode()).hexdigest()
-        data = {
-            'q': text,
-            'from': from_lang,
-            'to': to_lang,
-            'appid': api_id,
-            'salt': str(salt),
-            'sign': sign
-        }
-        # 处理返回结果
-        res = requests.post(baidu_api_url, data=data)
-        result = res.json()
-        result = result['trans_result'][0]['dst']
-        # 普通接口每秒请求数限制
-        qps = round(1 / qps, 2)
-        time.sleep(qps)
-        return result
-    except Exception as e:
-        print('baidu_translate:  ', end='')
-        print(e)
+    temp = []
+    translated_strs = []
+    if len(text) > max_require_length:
+        temp = text.split('.')
+    else:
+        temp.append(text)
+    for split_text in temp:
+        try:
+            # 百度翻译api 要求格式
+            salt = random.randint(3276, 65536)
+            sign = api_id + split_text + str(salt) + secret_key
+            sign = hashlib.md5(sign.encode()).hexdigest()
+            data = {
+                'q': split_text,
+                'from': from_lang,
+                'to': to_lang,
+                'appid': api_id,
+                'salt': str(salt),
+                'sign': sign
+            }
+            # 处理返回结果
+            res = requests.post(baidu_api_url, data=data)
+            result = res.json()
+            result = result['trans_result'][0]['dst']
+            translated_strs.append(result)
+            # 普通接口每秒请求数限制
+            qps = round(1 / qps, 2)
+            time.sleep(qps)
+        except Exception as e:
+            print('baidu_translate:  ', end='')
+            print(e)
+
+    return ''.join(translated_strs)
 
 
 # TODO 尝试爬取翻译界面 百度翻译加密导致无法爬取
