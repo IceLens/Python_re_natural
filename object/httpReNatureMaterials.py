@@ -4,10 +4,9 @@ import json
 import os
 import random
 import re
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
+from threading import Thread, RLock
 
 import jieba
 import requests
@@ -22,8 +21,10 @@ def get_html(url: str, rand=False, do_re_try=True, re_try_times=5, timeout=60) -
     headers = {'referer': 'https://www.nature.com/'}
     if not rand:
         headers[
-            'User-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'
+            'User-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' \
+                            'Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.50'
     else:
+        # 设置为True以便使用者计算机上没有配置文件而无法运行
         ua = UserAgent(use_external_data=True)
         headers['User-agent'] = ua.edge
 
@@ -35,11 +36,12 @@ def get_html(url: str, rand=False, do_re_try=True, re_try_times=5, timeout=60) -
             r.encoding = 'utf-8'
             return r.text
         except Exception as e:
-            print(f'\rRetry connecting... {i + 1}/{re_try_times}', end='')
             if i >= 6 or not do_re_try:
                 print('\r\nget_html:  ', end='')
                 print(e)
                 break
+            # 错误重试
+            print(f'\rRetry connecting... {i + 1}/{re_try_times}', end='')
         finally:
             time.sleep(0.5)
             i += 1
@@ -108,16 +110,19 @@ def web_change(tag: BeautifulSoup):
 
 
 # BaiduAPI 翻译
-def baidu_translate(text, flag=0):
+# 一次请求过多会出现文本抛弃现象
+# TODO 文本过长时分割文本使之满足接口限制
+# max_single_request=1000
+def baidu_translate(text, qps=1, flag=0) -> str:
     # 检测本地是否有配置文件
-    if os.path.isfile(path + file_name):
-        api_list = json_api_read(path + file_name)
+    if os.path.isfile(path + fileName):
+        api_list = json_api_read(path + fileName)
         api_id = api_list['api_id']
         secret_key = api_list['secret_key']
     else:
         print('因安全问题,百度API需自行提供,输入后将保存')
-        api_id = str(input('API账户'))
-        secret_key = str(input('API密钥'))
+        api_id = input('API账户')
+        secret_key = input('API密钥')
         json_api_write(path, api_id, secret_key)
 
     baidu_api_url = 'https://api.fanyi.baidu.com/api/trans/vip/translate'
@@ -129,8 +134,8 @@ def baidu_translate(text, flag=0):
     else:
         to_lang = 'zh'
 
-    # 百度翻译api 要求格式
     try:
+        # 百度翻译api 要求格式
         salt = random.randint(3276, 65536)
         sign = api_id + text + str(salt) + secret_key
         sign = hashlib.md5(sign.encode()).hexdigest()
@@ -146,7 +151,9 @@ def baidu_translate(text, flag=0):
         res = requests.post(baidu_api_url, data=data)
         result = res.json()
         result = result['trans_result'][0]['dst']
-        time.sleep(1)
+        # 普通接口每秒请求数限制
+        qps = round(1 / qps, 2)
+        time.sleep(qps)
         return result
     except Exception as e:
         print('baidu_translate:  ', end='')
@@ -155,10 +162,10 @@ def baidu_translate(text, flag=0):
 
 # TODO 尝试爬取翻译界面 百度翻译加密导致无法爬取
 # 预使用 Selenium 库的无头浏览器进行爬取,但应时间和兼容问题放弃
-def baidu_trans_two(text):
+"""def baidu_trans_two(text):
     if type(text) is not str:
         raise TypeError
-    exit('未完成')
+    exit('未完成')"""
 
 
 def process_and_write(dic: dict):
@@ -170,17 +177,20 @@ def process_and_write(dic: dict):
 
     # 翻译模式
     if select == 'y':
-        lock.acquire()
+        # 调用翻译函数 加锁以避免请求过快
+        translateLock.acquire()
         title = baidu_translate(title)
         summary = baidu_translate(summary)
         abstract = baidu_translate(abstract)
+        translateLock.release()
         # 中文字符问题
-        del_char_list = ('＜sub＞', '＜/su＞')
+        """del_char_list = ('＜sub＞', '＜/su＞')
         change_char_list = ('<sub>', '</sub>')
         for char_index in range(1):
             summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
-            abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])
-        lock.release()
+            abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])"""
+        summary = summary.replace('＜', '<').replace('＞', '>')
+        abstract = abstract.replace('＜', '<').replace('＞', '>')
         print('翻译完成')
 
     # 调取wrap以换行文本
@@ -197,19 +207,21 @@ def process_and_write(dic: dict):
         f'[发布时间]  \n{pub_time}\n\n'
         f'***\n\n'
     )
-    inFoFile.flush()
+    # inFoFile.flush()
 
 
 # 获取文章摘要
 def get_abstract(url: str):
-    html = get_html(url, rand=requestHeadersType, re_try_times=2)
+    html = get_html(url, rand=useRandomHeaders, re_try_times=2)
     soup = BeautifulSoup(html, "lxml")
+    # 去除页面无用标签
     [s.extract() for s in soup.find_all(attrs={'class': 'recommended pull pull--left u-sans-serif'})]
 
-    # images_link = soup.find_all(attrs={'class': 'figure__image'})
     text = soup.find(attrs={'class': 'c-article-body main-content'})
     text = str(text)
-    text = text.replace('<h2>', '\n### ').replace('</h2>', '\n')
+    # 内容排版
+    text = text.replace('<h2>', '\n### ').replace('</h2>', '\n').replace('\n</figure>', '</figure>\n\n') \
+        .replace('<figure class="figure">\n', '\n<figure class="figure">').replace('\n</figcaption>', '</figcaption>')
     text = re.sub(
         r'(</?a.*?>)|(</?p.*?>)|(<article.*?</article>)|(</source>)|(</?div.*?>)|(</?span.*?>)',
         '',
@@ -225,13 +237,14 @@ def process_text_analysis(tag):
         title_link = tag.find(attrs={"class": "c-card__link u-link-inherit"})
         title = re.sub('(</?a.*?>)|(</?p>)', '', str(title_link))
         # 简介
+        # 有些项无简介但有正文所以加入判断
         summary = tag.find(attrs={"class": "c-card__summary u-mb-16 u-hide-sm-max"})
         if summary is not None:
             summary = summary.select('p')[0]
             summary = re.sub('(</?a.*?>)|(</?p>)', '', str(summary))
         else:
             summary = 'None'
-        # 文章链接'a'标签
+        # 文章链接'a'标签 用于转到正文页面进行爬取
         link = title_link.get('href')
         # 文章发布时间
         pub_time = tag.select("time[class='c-meta__item']")
@@ -245,6 +258,7 @@ def process_text_analysis(tag):
             # 获取摘要
             url = 'https://www.nature.com'
             url = url + link
+            # 元素去重
             url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
             if url_hash in urlCollect:
                 return
@@ -265,21 +279,22 @@ def process_text_analysis(tag):
 
 
 # BeautifulSoup 处理HTML以提取信息 app-reviews-row__item
-def start_text_analysis(soup: BeautifulSoup):
+def start_text_analysis(soup: BeautifulSoup, max_threading=5):
     start = time.perf_counter()
     # 获取每个文本盒子
     all_boxs = ['"app-featured-row__item"', '"app-news-row__item"',
                 '"app-reviews-row__item"']
     tags = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        for box in all_boxs:
-            for tag in soup.select(f'li[class={box}]'):
-                tags.append(tag)
+    for box in all_boxs:
+        for tag in soup.select(f'li[class={box}]'):
+            tags.append(tag)
+    with ThreadPoolExecutor(max_workers=max_threading) as executor:
+        # 使用阻塞方法,等待线程完成
         executor.map(process_text_analysis, tags)
         executor.shutdown(wait=True)
 
     end = time.perf_counter()
-    print(f'Start_text_analysis{end - start}')
+    print(f'\r\nAnalysis completed in:  {end - start}s')
 
 
 # 彩蛋功能的选取
@@ -348,23 +363,23 @@ def json_api_read(file_path: str):
 # Main function
 def main():
     url_n = 'https://www.nature.com/'
-    global requestHeadersType
-    requestHeadersType = input('(y/n)是否使用随机请求头:  ')
+    global useRandomHeaders
+    useRandomHeaders = input('(y/n)是否使用随机请求头:  ')
 
-    if requestHeadersType == 'n':
-        requestHeadersType = False
+    if useRandomHeaders == 'n':
+        useRandomHeaders = False
     else:
         print('已选择随机请求头')
-        requestHeadersType = True
+        useRandomHeaders = True
 
     print('开始爬取\n' + '——' * 30)
-    html_nature = get_html(url_n, rand=requestHeadersType)
+    html_nature = get_html(url_n, rand=useRandomHeaders)
 
     try:
         soup_main = BeautifulSoup(html_nature, "lxml")
     except Exception as e:
         print('\r\nBs4:  ' + str(e), end='')
-        exit('链接超时')
+        exit('\r\n链接超时')
     if web_change(soup_main):
         print('请求完成,正在解析文档')
         start_text_analysis(soup_main)
@@ -379,18 +394,21 @@ if __name__ == '__main__':
         print(f'你好，来自{address}的用户')
 
     # 配置文件地址
-    folder_dir = os.environ['APPDATA']
-    file_name = 'api.json'
-    path = folder_dir + '\\pyhttpRe\\'
-    inFoFile = None
-    lock = threading.RLock()
+    folderDir = os.environ['APPDATA']
+    fileName = 'api.json'
+    path = folderDir + '\\pyhttpRe\\'
+    # 定义可重入锁
+    translateLock = RLock()
+    # 定义集合,用于后续重复元素去除
     urlCollect = set()
-    requestHeadersType = False
+    # fake_useragent 应用外部数据设置
+    useExternalData = True
+    # 随机请求头
+    useRandomHeaders = False
 
     while True:
         # 选择
         select = input('\n(1)获取;(2)强制刷新;(3)重新输入密钥;(4)查询当前密钥;(5)清除密钥;(q)退出\r\n')
-        # 爬取入口
         # 预处理和后处理
         if select == '1':
             if not os.path.exists('save files'):

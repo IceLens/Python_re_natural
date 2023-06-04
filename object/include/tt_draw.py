@@ -87,5 +87,3 @@ def tt_draw_picture(url, pixel_size=5, width_pixel=1.0, height_pixel=1.0):
         turtle.pendown()
 
     turtle.done()
-
-
