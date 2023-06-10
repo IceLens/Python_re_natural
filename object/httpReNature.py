@@ -218,7 +218,7 @@ def process_and_write(dic: dict):
 
 
 # 获取文章摘要
-def get_abstract(url: str):
+def get_abstract(url: str, all_result: dict):
     html = get_html(url, rand=useRandomHeaders, re_try_times=2)
     soup = BeautifulSoup(html, "lxml")
     # 去除页面无用标签
@@ -234,7 +234,8 @@ def get_abstract(url: str):
         '',
         text)
 
-    return text
+    all_result['abstract'] = text
+    process_and_write(all_result)
 
 
 def process_text_analysis(tag):
@@ -271,35 +272,28 @@ def process_text_analysis(tag):
                 return
             else:
                 urlCollect.add(url_hash)
-            abstract = get_abstract(url)
             result = {
                 'title': title, 'summary': summary,
-                'abstract': abstract,
                 'pub_time': pub_time,
                 'link': url
             }
-            process_and_write(result)
+            work_pool.submit(get_abstract, url, result)
         else:
             pass
     except Exception as e:
         print('\r\nprocess_text_analysis:  ' + str(e), end='')
 
 
-# BeautifulSoup 处理HTML以提取信息 app-reviews-row__item
-def start_text_analysis(soup: BeautifulSoup, max_threading=5):
+# BeautifulSoup 处理HTML以提取信息
+def start_text_analysis(soup: BeautifulSoup):
     start = time.perf_counter()
     # 获取每个文本盒子
     all_boxs = ['"app-featured-row__item"', '"app-news-row__item"',
                 '"app-reviews-row__item"']
-    tags = []
     for box in all_boxs:
         for tag in soup.select(f'li[class={box}]'):
-            tags.append(tag)
-    with ThreadPoolExecutor(max_workers=max_threading) as executor:
-        # 使用阻塞方法,等待线程完成
-        executor.map(process_text_analysis, tags)
-        executor.shutdown(wait=True)
-
+            process_text_analysis(tag)
+    work_pool.shutdown(wait=True)
     end = time.perf_counter()
     print(f'\r\nAnalysis completed in:  {end - start}s')
 
@@ -412,6 +406,8 @@ if __name__ == '__main__':
     useExternalData = True
     # 随机请求头
     useRandomHeaders = False
+    # Treading
+    work_pool = ThreadPoolExecutor(max_workers=8)
 
     while True:
         # 选择
