@@ -8,10 +8,26 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread, RLock
 
-import jieba
-import requests
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
+try:
+    import jieba
+except Exception as e:
+    print(e)
+    os.system("pip install jieba")
+try:
+    import requests
+except Exception as e:
+    print(e)
+    os.system("pip install requests")
+try:
+    from bs4 import BeautifulSoup
+except Exception as e:
+    print(e)
+    os.system("pip install bs4")
+try:
+    from fake_useragent import UserAgent
+except Exception as e:
+    print(e)
+    os.system("pip install fake-useragent")
 
 from include.tt_draw import tt_draw_random, tt_draw_polyhedral, tt_draw_picture
 
@@ -191,11 +207,6 @@ def process_and_write(dic: dict):
         abstract = baidu_translate(abstract)
         translateLock.release()
         # 中文字符问题
-        """del_char_list = ('＜sub＞', '＜/su＞')
-        change_char_list = ('<sub>', '</sub>')
-        for char_index in range(1):
-            summary = summary.replace(del_char_list[char_index], change_char_list[char_index])
-            abstract = abstract.replace(del_char_list[char_index], change_char_list[char_index])"""
         summary = summary.replace('＜', '<').replace('＞', '>')
         abstract = abstract.replace('＜', '<').replace('＞', '>')
         print('翻译完成')
